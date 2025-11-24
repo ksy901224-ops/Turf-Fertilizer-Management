@@ -2,8 +2,16 @@
 import { Fertilizer, LogEntry, User, NotificationSettings, UserDataSummary } from './types';
 import { FERTILIZER_GUIDE } from './constants';
 
-const DB_KEY = 'TURF_APP_DATABASE_V2'; // New key to force migration
+// --- CONFIGURATION ---
+// Set this to TRUE to use the Node.js backend server (shared data).
+// Set this to FALSE to use LocalStorage (single device, offline).
+const USE_BACKEND = false; 
 
+const API_BASE = '/api';
+
+const DB_KEY = 'TURF_APP_DATABASE_V2';
+
+// --- LOCAL STORAGE HELPERS ---
 interface TurfDatabase {
     users: User[];
     fertilizers: { [username: string]: Fertilizer[] };
@@ -33,14 +41,7 @@ const getDatabase = (): TurfDatabase => {
     } catch (e) {
         console.error("Failed to load database, will reset.", e);
     }
-    // Default empty state
-    return {
-        users: [],
-        fertilizers: {},
-        logs: {},
-        settings: {},
-        notificationSettings: {}
-    };
+    return { users: [], fertilizers: {}, logs: {}, settings: {}, notificationSettings: {} };
 };
 
 const saveDatabase = (db: TurfDatabase) => {
@@ -65,23 +66,21 @@ const migrateUsage = (item: any) => {
     return newItem;
 };
 
+// Migration only runs in LocalStorage mode
 const runMigration = () => {
+    if (USE_BACKEND) return; 
+
     const db = getDatabase();
-    if (db.users.length > 0) return; // Already migrated or fresh install
+    if (db.users.length > 0) return;
 
     console.log("Running one-time data migration...");
-
     try {
-        // Migrate users
         const oldUsersRaw = localStorage.getItem('turf_users');
         const oldUsers = oldUsersRaw ? JSON.parse(oldUsersRaw) : [{ username: 'admin', password: 'admin', golfCourse: '관리자' }];
         db.users = oldUsers;
 
-        // Migrate data for each user
         for (const user of oldUsers) {
             const username = user.username;
-
-            // Fertilizers
             const fertKey = `turf_fertilizers_${username}`;
             const oldFertRaw = localStorage.getItem(fertKey);
             if (oldFertRaw) {
@@ -91,7 +90,6 @@ const runMigration = () => {
                 db.fertilizers.admin = initialFertilizers.map(migrateUsage);
             }
 
-            // Logs
             const logKey = `turf_log_${username}`;
             const oldLogRaw = localStorage.getItem(logKey);
             if (oldLogRaw) {
@@ -99,7 +97,6 @@ const runMigration = () => {
                 localStorage.removeItem(logKey);
             }
 
-            // Settings
             const greenArea = localStorage.getItem(`turf_greenArea_${username}`) || '';
             const teeArea = localStorage.getItem(`turf_teeArea_${username}`) || '';
             const fairwayArea = localStorage.getItem(`turf_fairwayArea_${username}`) || localStorage.getItem(`turf_teeFairwayArea_${username}`) || '';
@@ -111,7 +108,6 @@ const runMigration = () => {
             localStorage.removeItem(`turf_teeFairwayArea_${username}`);
             localStorage.removeItem(`turf_selectedGuide_${username}`);
             
-            // Notification Settings
             const notifKey = `turf_notifications_${username}`;
             const oldNotifRaw = localStorage.getItem(notifKey);
             if (oldNotifRaw) {
@@ -120,7 +116,6 @@ const runMigration = () => {
             }
         }
         
-        // Ensure admin user exists
         if (!db.users.some(u => u.username === 'admin')) {
             db.users.push({ username: 'admin', password: 'admin', golfCourse: '관리자' });
         }
@@ -130,101 +125,159 @@ const runMigration = () => {
 
         saveDatabase(db);
         localStorage.removeItem('turf_users');
-        console.log("Migration complete.");
     } catch (e) {
         console.error("Migration failed:", e);
     }
 };
 
-// Run migration once on startup
 runMigration();
 
-// --- User Management ---
+
+// --- UNIFIED API FUNCTIONS ---
+
 export const validateUser = async (username: string, password_provided: string): Promise<User | null> => {
-    await simulateDelay(50);
-    const db = getDatabase();
-    const user = db.users.find(u => u.username === username && u.password === password_provided);
-    if (user) {
-        const { password, ...userWithoutPassword } = user;
-        return userWithoutPassword;
+    if (USE_BACKEND) {
+        try {
+            const res = await fetch(`${API_BASE}/auth/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password: password_provided })
+            });
+            if (res.ok) return await res.json();
+            return null;
+        } catch (e) { console.error(e); return null; }
+    } else {
+        await simulateDelay(50);
+        const db = getDatabase();
+        const user = db.users.find(u => u.username === username && u.password === password_provided);
+        if (user) {
+            const { password, ...userWithoutPassword } = user;
+            return userWithoutPassword;
+        }
+        return null;
     }
-    return null;
 };
 
 export const createUser = async (username: string, password_provided: string, golfCourse: string): Promise<User | 'exists' | 'invalid'> => {
-    await simulateDelay(100);
-    if (!username.trim() || !password_provided || !golfCourse.trim()) {
-        return 'invalid';
+    if (USE_BACKEND) {
+        try {
+            const res = await fetch(`${API_BASE}/users`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password: password_provided, golfCourse })
+            });
+            if (res.status === 409) return 'exists';
+            if (res.status === 400) return 'invalid';
+            if (res.ok) return await res.json();
+            return 'invalid';
+        } catch (e) { console.error(e); return 'invalid'; }
+    } else {
+        await simulateDelay(100);
+        if (!username.trim() || !password_provided || !golfCourse.trim()) return 'invalid';
+        const db = getDatabase();
+        if (db.users.some(u => u.username === username)) return 'exists';
+        const newUser: User = { username, password: password_provided, golfCourse };
+        db.users.push(newUser);
+        saveDatabase(db);
+        const { password, ...userWithoutPassword } = newUser;
+        return userWithoutPassword;
     }
-    const db = getDatabase();
-    if (db.users.some(u => u.username === username)) {
-        return 'exists';
-    }
-    const newUser: User = { username, password: password_provided, golfCourse };
-    db.users.push(newUser);
-    saveDatabase(db);
-    const { password, ...userWithoutPassword } = newUser;
-    return userWithoutPassword;
 };
 
 export const getUser = async (username: string): Promise<User | null> => {
-    await simulateDelay(50);
-    const db = getDatabase();
-    const user = db.users.find(u => u.username === username);
-    if (user) {
-        const { password, ...userWithoutPassword } = user;
-        return userWithoutPassword;
+    if (USE_BACKEND) {
+        try {
+            const res = await fetch(`${API_BASE}/users/${username}`);
+            if (res.ok) return await res.json();
+            return null;
+        } catch (e) { console.error(e); return null; }
+    } else {
+        await simulateDelay(50);
+        const db = getDatabase();
+        const user = db.users.find(u => u.username === username);
+        if (user) {
+            const { password, ...userWithoutPassword } = user;
+            return userWithoutPassword;
+        }
+        return null;
     }
-    return null;
 };
 
 export const deleteUser = async (username: string): Promise<void> => {
-    await simulateDelay(100);
-    const db = getDatabase();
-    
-    // Remove user
-    db.users = db.users.filter(u => u.username !== username);
-    
-    // Remove associated data
-    if (db.fertilizers[username]) delete db.fertilizers[username];
-    if (db.logs[username]) delete db.logs[username];
-    if (db.settings[username]) delete db.settings[username];
-    if (db.notificationSettings[username]) delete db.notificationSettings[username];
-    
-    saveDatabase(db);
+    if (USE_BACKEND) {
+        await fetch(`${API_BASE}/users/${username}`, { method: 'DELETE' });
+    } else {
+        await simulateDelay(100);
+        const db = getDatabase();
+        db.users = db.users.filter(u => u.username !== username);
+        if (db.fertilizers[username]) delete db.fertilizers[username];
+        if (db.logs[username]) delete db.logs[username];
+        if (db.settings[username]) delete db.settings[username];
+        if (db.notificationSettings[username]) delete db.notificationSettings[username];
+        saveDatabase(db);
+    }
 };
 
-// --- Data Functions ---
-
 export const getFertilizers = async (username: string): Promise<Fertilizer[]> => {
-    await simulateDelay(200);
-    const db = getDatabase();
-    const fertilizers = db.fertilizers[username] || [];
-    return fertilizers.map((item: any) => ({
-        ...item,
-        stock: item.stock ?? 0,
-        lowStockAlertEnabled: item.lowStockAlertEnabled ?? false,
-    }));
+    if (USE_BACKEND) {
+        const res = await fetch(`${API_BASE}/fertilizers?username=${username}`);
+        const data = await res.json();
+        return data.map((item: any) => ({
+            ...item,
+            stock: item.stock ?? 0,
+            lowStockAlertEnabled: item.lowStockAlertEnabled ?? false,
+        }));
+    } else {
+        await simulateDelay(200);
+        const db = getDatabase();
+        const fertilizers = db.fertilizers[username] || [];
+        return fertilizers.map((item: any) => ({
+            ...item,
+            stock: item.stock ?? 0,
+            lowStockAlertEnabled: item.lowStockAlertEnabled ?? false,
+        }));
+    }
 };
 
 export const saveFertilizers = async (username: string, fertilizers: Fertilizer[]): Promise<void> => {
-    await simulateDelay(100);
-    const db = getDatabase();
-    db.fertilizers[username] = fertilizers;
-    saveDatabase(db);
+    if (USE_BACKEND) {
+        await fetch(`${API_BASE}/fertilizers`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, fertilizers })
+        });
+    } else {
+        await simulateDelay(100);
+        const db = getDatabase();
+        db.fertilizers[username] = fertilizers;
+        saveDatabase(db);
+    }
 };
 
 export const getLog = async (username: string): Promise<LogEntry[]> => {
-    await simulateDelay(200);
-    const db = getDatabase();
-    return db.logs[username] || [];
+    if (USE_BACKEND) {
+        const res = await fetch(`${API_BASE}/logs?username=${username}`);
+        return await res.json();
+    } else {
+        await simulateDelay(200);
+        const db = getDatabase();
+        return db.logs[username] || [];
+    }
 };
 
 export const saveLog = async (username: string, log: LogEntry[]): Promise<void> => {
-    await simulateDelay(100);
-    const db = getDatabase();
-    db.logs[username] = log;
-    saveDatabase(db);
+    if (USE_BACKEND) {
+        await fetch(`${API_BASE}/logs`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, logs: log })
+        });
+    } else {
+        await simulateDelay(100);
+        const db = getDatabase();
+        db.logs[username] = log;
+        saveDatabase(db);
+    }
 };
 
 export interface UserSettings {
@@ -237,19 +290,24 @@ export interface UserSettings {
     fairwayGuideType?: 'KBG' | 'Zoysia';
 }
 
-export const getSettings = async (username: string): Promise<UserSettings> => {
-    await simulateDelay(150);
-    const db = getDatabase();
-    const userSettings = db.settings[username];
-    
-    const defaultManualTargets = {
-        '그린': Array(12).fill({ N: 0, P: 0, K: 0 }),
-        '티': Array(12).fill({ N: 0, P: 0, K: 0 }),
-        '페어웨이': Array(12).fill({ N: 0, P: 0, K: 0 }),
-    };
+const defaultManualTargets = {
+    '그린': Array(12).fill({ N: 0, P: 0, K: 0 }),
+    '티': Array(12).fill({ N: 0, P: 0, K: 0 }),
+    '페어웨이': Array(12).fill({ N: 0, P: 0, K: 0 }),
+};
 
-    if (userSettings) {
-        // Handle migration from array to object if old data exists
+export const getSettings = async (username: string): Promise<UserSettings> => {
+    let userSettings: any = {};
+    if (USE_BACKEND) {
+        const res = await fetch(`${API_BASE}/settings?username=${username}`);
+        userSettings = await res.json();
+    } else {
+        await simulateDelay(150);
+        const db = getDatabase();
+        userSettings = db.settings[username];
+    }
+
+    if (userSettings && Object.keys(userSettings).length > 0) {
         let manualTargets = userSettings.manualTargets;
         if (Array.isArray(manualTargets)) {
             manualTargets = {
@@ -260,7 +318,6 @@ export const getSettings = async (username: string): Promise<UserSettings> => {
         } else if (!manualTargets) {
             manualTargets = defaultManualTargets;
         }
-
         return { ...userSettings, manualTargets };
     }
 
@@ -276,57 +333,77 @@ export const getSettings = async (username: string): Promise<UserSettings> => {
 };
 
 export const saveSettings = async (username: string, settings: UserSettings): Promise<void> => {
-    await simulateDelay(50);
-    const db = getDatabase();
-    db.settings[username] = settings;
-    saveDatabase(db);
+    if (USE_BACKEND) {
+        await fetch(`${API_BASE}/settings`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, settings })
+        });
+    } else {
+        await simulateDelay(50);
+        const db = getDatabase();
+        db.settings[username] = settings;
+        saveDatabase(db);
+    }
 };
 
-
 export const getNotificationSettings = async (username: string): Promise<NotificationSettings> => {
-    await simulateDelay(100);
-    const db = getDatabase();
-    const settings = db.notificationSettings[username];
-    if (settings) {
-        return settings;
+    if (USE_BACKEND) {
+        const res = await fetch(`${API_BASE}/notifications?username=${username}`);
+        return await res.json();
+    } else {
+        await simulateDelay(100);
+        const db = getDatabase();
+        return db.notificationSettings[username] || { enabled: false, email: '', threshold: 10 };
     }
-    // Return default settings if none found
-    return { enabled: false, email: '', threshold: 10 };
 };
 
 export const saveNotificationSettings = async (username: string, settings: NotificationSettings): Promise<void> => {
-    await simulateDelay(100);
-    const db = getDatabase();
-    db.notificationSettings[username] = settings;
-    saveDatabase(db);
+    if (USE_BACKEND) {
+        await fetch(`${API_BASE}/notifications`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, settings })
+        });
+    } else {
+        await simulateDelay(100);
+        const db = getDatabase();
+        db.notificationSettings[username] = settings;
+        saveDatabase(db);
+    }
 };
 
 export const getAllUsersData = async (): Promise<UserDataSummary[]> => {
-    await simulateDelay(300);
-    const db = getDatabase();
-    const allData: UserDataSummary[] = [];
+    if (USE_BACKEND) {
+        const res = await fetch(`${API_BASE}/admin/users-data`);
+        return await res.json();
+    } else {
+        await simulateDelay(300);
+        const db = getDatabase();
+        const allData: UserDataSummary[] = [];
 
-    for (const user of db.users) {
-        if (user.username === 'admin') continue;
+        for (const user of db.users) {
+            if (user.username === 'admin') continue;
 
-        const logs = db.logs[user.username] || [];
-        const fertilizers = db.fertilizers[user.username] || []; // User-specific, but they don't have one, so it will be empty
-        const totalCost = logs.reduce((sum, entry) => sum + (entry.totalCost || 0), 0);
-        
-        let lastActivity: string | null = null;
-        if (logs.length > 0) {
-            lastActivity = [...logs].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].date;
+            const logs = db.logs[user.username] || [];
+            const fertilizers = db.fertilizers[user.username] || [];
+            const totalCost = logs.reduce((sum, entry) => sum + (entry.totalCost || 0), 0);
+            
+            let lastActivity: string | null = null;
+            if (logs.length > 0) {
+                lastActivity = [...logs].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].date;
+            }
+
+            allData.push({
+                username: user.username,
+                golfCourse: user.golfCourse || '미지정',
+                logCount: logs.length,
+                totalCost,
+                lastActivity,
+                logs: [...logs].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+                fertilizers,
+            });
         }
-
-        allData.push({
-            username: user.username,
-            golfCourse: user.golfCourse || '미지정',
-            logCount: logs.length,
-            totalCost,
-            lastActivity,
-            logs: [...logs].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
-            fertilizers,
-        });
+        return allData;
     }
-    return allData;
 };
