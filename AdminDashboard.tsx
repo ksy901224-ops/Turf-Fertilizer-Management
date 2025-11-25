@@ -380,6 +380,11 @@ export const AdminDashboard = ({ user, onLogout }: { user: string, onLogout: () 
         let parts: any[] = [];
         const prompt = `
             Analyze the provided input (product image, excel, pdf, or text) and extract fertilizer specifications.
+            
+            **Rules for ambiguous fields:**
+            - **usage**: If not explicitly stated as Green/Tee/Fairway, infer from context (e.g., "fine turf" -> "그린", "sports field" -> "페어웨이"). If unsure, default to "그린".
+            - **type**: If not explicit, infer from form (e.g., liquid -> "액상", granular/slow release -> "완효성"). If unsure, default to "완효성".
+            
             Return a JSON object with these fields (use 0 for missing numbers, empty string for missing strings):
             {
                 "name": "Product Name",
@@ -394,7 +399,6 @@ export const AdminDashboard = ({ user, onLogout }: { user: string, onLogout: () 
                 "density": Number (default 1),
                 "concentration": Number (liquid conc %)
             }
-            Identify usage and type from context if not explicit.
         `;
 
         try {
@@ -443,6 +447,11 @@ export const AdminDashboard = ({ user, onLogout }: { user: string, onLogout: () 
         if (!aiTextInput.trim()) return;
         const prompt = `
             Analyze the provided text input and extract fertilizer specifications.
+            
+            **Rules for ambiguous fields:**
+            - **usage**: If not explicitly stated as Green/Tee/Fairway, infer from context (e.g., "fine turf" -> "그린", "sports field" -> "페어웨이"). If unsure, default to "그린".
+            - **type**: If not explicit, infer from form (e.g., liquid -> "액상", granular/slow release -> "완효성"). If unsure, default to "완효성".
+
             Return a JSON object with these fields (use 0 for missing numbers, empty string for missing strings):
             {
                 "name": "Product Name",
