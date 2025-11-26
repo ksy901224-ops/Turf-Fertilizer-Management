@@ -541,6 +541,17 @@ export default function TurfFertilizerApp() {
     }
   }, [calculatorProduct]);
   
+  // Real-time nutrient preview for log input
+  const nutrientPreview = useMemo(() => {
+      if (!selectedProduct || !applicationRate) return null;
+      const rate = parseFloat(applicationRate);
+      if (isNaN(rate) || rate <= 0) return null;
+      
+      // Calculate per 1 m²
+      const { nutrients } = getApplicationDetails(selectedProduct, 1, rate);
+      return nutrients;
+  }, [selectedProduct, applicationRate]);
+
   const handleAddLog = () => {
     if (!selectedProduct) { alert('선택 필요: 비료를 선택하세요.'); return; }
     if (!date || !applicationRate) { alert('입력 필요: 날짜와 사용량을 입력하세요.'); return; }
@@ -570,12 +581,7 @@ export default function TurfFertilizerApp() {
         product: selectedProduct.name,
         area: parsedArea,
         totalCost: Number(totalCost.toFixed(2)),
-        nutrients: nutrients, // Already calculated as pure component grams per m² by getApplicationDetails in the previous step? 
-                              // Wait, getApplicationDetails returns TOTAL grams for the WHOLE area if >1m2. 
-                              // BUT for LogEntry 'nutrients' field, we want total grams applied to the area.
-                              // The analysis chart divides this by area later.
-                              // Let's verify getApplicationDetails.
-                              // getApplicationDetails returns total grams of nutrients for the given area. Correct.
+        nutrients: nutrients, 
         applicationRate: parsedApplicationRate,
         applicationUnit: rateUnit,
         usage: usage,
@@ -1768,6 +1774,18 @@ export default function TurfFertilizerApp() {
                     </div>
                 </div>
 
+                {/* NUTRIENT PREVIEW CARD */}
+                {nutrientPreview && (
+                    <div className="bg-indigo-50 border border-indigo-100 p-3 rounded-lg flex items-center justify-between animate-fadeIn">
+                        <span className="text-xs font-bold text-indigo-800">✨ 순성분비 미리보기 (1㎡당 투입량)</span>
+                        <div className="flex gap-3 text-sm font-mono">
+                            <span className="text-green-700 font-bold">N: {nutrientPreview.N.toFixed(2)}g</span>
+                            <span className="text-blue-700 font-bold">P: {nutrientPreview.P.toFixed(2)}g</span>
+                            <span className="text-orange-700 font-bold">K: {nutrientPreview.K.toFixed(2)}g</span>
+                        </div>
+                    </div>
+                )}
+
                 {/* Area Input Tabs */}
                 <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
                     <p className="text-sm font-medium text-slate-700 mb-3">시비 구역 선택 및 면적 입력</p>
@@ -1967,21 +1985,21 @@ export default function TurfFertilizerApp() {
                             <ComposedChart data={monthlyNutrientChartData} margin={{top: 10, right: 10, left: 0, bottom: 0}}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                                 <XAxis dataKey="month" fontSize={12} tickFormatter={(val) => `${parseInt(val.split('-')[1])}월`} />
-                                <YAxis fontSize={12} label={{ value: 'g/㎡', angle: -90, position: 'insideLeft' }} />
-                                <Tooltip content={<CustomChartTooltip />} cursor={{fill: 'transparent'}} />
+                                <YAxis fontSize={12} label={{ value: '순성분 투입량 (g/㎡)', angle: -90, position: 'insideLeft' }} />
+                                <Tooltip content={<CustomChartTooltip />} cursor={{fill: 'rgba(0,0,0,0.05)'}} />
                                 <Legend wrapperStyle={{fontSize: '12px'}} />
                                 
                                 {/* Actual Inputs (Bars) */}
-                                <Bar dataKey="N" name="질소(N) 순성분" fill="#22c55e" barSize={15} />
-                                <Bar dataKey="P" name="인산(P) 순성분" fill="#3b82f6" barSize={15} />
-                                <Bar dataKey="K" name="칼륨(K) 순성분" fill="#f97316" barSize={15} />
+                                <Bar dataKey="N" name="질소(N) 순성분" fill="#22c55e" fillOpacity={0.8} barSize={15} />
+                                <Bar dataKey="P" name="인산(P) 순성분" fill="#3b82f6" fillOpacity={0.8} barSize={15} />
+                                <Bar dataKey="K" name="칼륨(K) 순성분" fill="#f97316" fillOpacity={0.8} barSize={15} />
 
                                 {/* Guides (Lines) - Only show if specific category is selected */}
                                 {analysisCategory !== 'all' && (
                                     <>
-                                        <Line type="monotone" dataKey="guideN" name="권장 N" stroke="#15803d" strokeWidth={2} strokeDasharray="4 4" dot={{r: 3}} />
-                                        <Line type="monotone" dataKey="guideP" name="권장 P" stroke="#1d4ed8" strokeWidth={2} strokeDasharray="4 4" dot={{r: 3}} />
-                                        <Line type="monotone" dataKey="guideK" name="권장 K" stroke="#c2410c" strokeWidth={2} strokeDasharray="4 4" dot={{r: 3}} />
+                                        <Line type="monotone" dataKey="guideN" name="권장 N" stroke="#15803d" strokeWidth={3} strokeDasharray="5 5" dot={{r: 4}} />
+                                        <Line type="monotone" dataKey="guideP" name="권장 P" stroke="#1d4ed8" strokeWidth={3} strokeDasharray="5 5" dot={{r: 4}} />
+                                        <Line type="monotone" dataKey="guideK" name="권장 K" stroke="#c2410c" strokeWidth={3} strokeDasharray="5 5" dot={{r: 4}} />
                                     </>
                                 )}
                             </ComposedChart>
