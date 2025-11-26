@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { GoogleGenAI } from '@google/genai';
@@ -900,6 +899,15 @@ export default function TurfFertilizerApp() {
       return guide || { N: 0, P: 0, K: 0 };
   }, [activePlanTab, fairwayGuideType]);
 
+  // NEW: Difference calculation
+  const manualPlanDifference = useMemo(() => {
+      return {
+          N: manualPlanTotal.N - standardGuideTotal.N,
+          P: manualPlanTotal.P - standardGuideTotal.P,
+          K: manualPlanTotal.K - standardGuideTotal.K
+      };
+  }, [manualPlanTotal, standardGuideTotal]);
+
   const getRatioColor = (current: number, standard: number) => {
       if (standard === 0) return 'text-slate-500';
       const ratio = current / standard;
@@ -1332,6 +1340,19 @@ export default function TurfFertilizerApp() {
                                                 </td>
                                                 <td className={`p-2 font-bold ${getRatioColor(manualPlanTotal.K, standardGuideTotal.K)}`}>
                                                     {standardGuideTotal.K > 0 ? Math.round((manualPlanTotal.K / standardGuideTotal.K) * 100) : 0}%
+                                                </td>
+                                            </tr>
+                                            {/* NEW ROW: Difference (Plan - Standard) */}
+                                            <tr className="bg-slate-50 text-xs border-t border-slate-200">
+                                                <td className="p-2 font-semibold text-slate-600">차이 (±g)</td>
+                                                <td className={`p-2 font-bold font-mono ${manualPlanDifference.N > 0 ? 'text-red-500' : manualPlanDifference.N < 0 ? 'text-blue-600' : 'text-slate-400'}`}>
+                                                    {manualPlanDifference.N > 0 ? '+' : ''}{manualPlanDifference.N.toFixed(1)}
+                                                </td>
+                                                <td className={`p-2 font-bold font-mono ${manualPlanDifference.P > 0 ? 'text-red-500' : manualPlanDifference.P < 0 ? 'text-blue-600' : 'text-slate-400'}`}>
+                                                    {manualPlanDifference.P > 0 ? '+' : ''}{manualPlanDifference.P.toFixed(1)}
+                                                </td>
+                                                <td className={`p-2 font-bold font-mono ${manualPlanDifference.K > 0 ? 'text-red-500' : manualPlanDifference.K < 0 ? 'text-blue-600' : 'text-slate-400'}`}>
+                                                    {manualPlanDifference.K > 0 ? '+' : ''}{manualPlanDifference.K.toFixed(1)}
                                                 </td>
                                             </tr>
                                         </tbody>
