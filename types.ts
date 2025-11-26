@@ -66,6 +66,7 @@ export interface User {
   username: string;
   password?: string;
   golfCourse: string;
+  isApproved?: boolean; // New field for approval status
 }
 
 export interface UserDataSummary {
@@ -76,6 +77,7 @@ export interface UserDataSummary {
     lastActivity: string | null;
     logs: LogEntry[];
     fertilizers: Fertilizer[];
+    isApproved: boolean; // New field for dashboard
 }
 
 export interface NotificationSettings {

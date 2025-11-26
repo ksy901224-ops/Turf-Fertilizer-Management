@@ -67,15 +67,29 @@ const migrateUsage = (item: any) => {
 
 const runMigration = () => {
     const db = getDatabase();
-    if (db.users.length > 0) return; // Already migrated or fresh install
+    
+    // Check if we need to migrate approval status for existing users
+    let needsSave = false;
+    db.users.forEach(user => {
+        if (user.isApproved === undefined) {
+            user.isApproved = true; // Auto-approve existing users during migration
+            needsSave = true;
+        }
+    });
+
+    if (db.users.length > 0 && !needsSave) return; // Already migrated or fresh install
 
     console.log("Running one-time data migration...");
 
     try {
         // Migrate users
         const oldUsersRaw = localStorage.getItem('turf_users');
-        const oldUsers = oldUsersRaw ? JSON.parse(oldUsersRaw) : [{ username: 'admin', password: 'admin', golfCourse: '관리자' }];
-        db.users = oldUsers;
+        const oldUsers = oldUsersRaw ? JSON.parse(oldUsersRaw) : [{ username: 'admin', password: 'admin', golfCourse: '관리자', isApproved: true }];
+        
+        // Merge old users if DB was empty, otherwise we just updated existing db above
+        if (db.users.length === 0) {
+            db.users = oldUsers.map((u: User) => ({...u, isApproved: u.isApproved ?? true}));
+        }
 
         // Migrate data for each user
         for (const user of oldUsers) {
@@ -120,10 +134,14 @@ const runMigration = () => {
             }
         }
         
-        // Ensure admin user exists
+        // Ensure admin user exists and is approved
         if (!db.users.some(u => u.username === 'admin')) {
-            db.users.push({ username: 'admin', password: 'admin', golfCourse: '관리자' });
+            db.users.push({ username: 'admin', password: 'admin', golfCourse: '관리자', isApproved: true });
+        } else {
+             const admin = db.users.find(u => u.username === 'admin');
+             if (admin) admin.isApproved = true;
         }
+        
         if(!db.fertilizers.admin) {
             db.fertilizers.admin = initialFertilizers.map(migrateUsage);
         }
@@ -140,11 +158,14 @@ const runMigration = () => {
 runMigration();
 
 // --- User Management ---
-export const validateUser = async (username: string, password_provided: string): Promise<User | null> => {
+export const validateUser = async (username: string, password_provided: string): Promise<User | 'pending' | null> => {
     await simulateDelay(50);
     const db = getDatabase();
     const user = db.users.find(u => u.username === username && u.password === password_provided);
     if (user) {
+        if (!user.isApproved) {
+            return 'pending';
+        }
         const { password, ...userWithoutPassword } = user;
         return userWithoutPassword;
     }
@@ -160,11 +181,22 @@ export const createUser = async (username: string, password_provided: string, go
     if (db.users.some(u => u.username === username)) {
         return 'exists';
     }
-    const newUser: User = { username, password: password_provided, golfCourse };
+    // New users are NOT approved by default (except maybe the very first one if logic dictates, but we'll stick to secure default)
+    const newUser: User = { username, password: password_provided, golfCourse, isApproved: false };
     db.users.push(newUser);
     saveDatabase(db);
     const { password, ...userWithoutPassword } = newUser;
     return userWithoutPassword;
+};
+
+export const approveUser = async (username: string): Promise<void> => {
+    await simulateDelay(100);
+    const db = getDatabase();
+    const user = db.users.find(u => u.username === username);
+    if (user) {
+        user.isApproved = true;
+        saveDatabase(db);
+    }
 };
 
 export const getUser = async (username: string): Promise<User | null> => {
@@ -326,6 +358,7 @@ export const getAllUsersData = async (): Promise<UserDataSummary[]> => {
             lastActivity,
             logs: [...logs].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
             fertilizers,
+            isApproved: user.isApproved ?? true, // Default to true if missing for display
         });
     }
     return allData;

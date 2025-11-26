@@ -13,14 +13,18 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [golfCourse, setGolfCourse] = useState('');
   const [error, setError] = useState('');
+  const [infoMessage, setInfoMessage] = useState('');
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    const user = await api.validateUser(username.trim(), password);
+    setInfoMessage('');
+    const result = await api.validateUser(username.trim(), password);
 
-    if (user) {
-      onLogin(user.username);
+    if (result === 'pending') {
+        setError('계정 승인 대기 중입니다. 관리자의 승인을 기다려주세요.');
+    } else if (result) {
+      onLogin(result.username);
     } else {
       setError('사용자 이름 또는 비밀번호가 잘못되었습니다.');
     }
@@ -29,6 +33,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setInfoMessage('');
     
     if (password !== confirmPassword) {
       setError('비밀번호가 일치하지 않습니다.');
@@ -46,7 +51,11 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     } else if (result === 'invalid') {
         setError('사용자 이름, 골프장 명, 비밀번호를 모두 입력해주세요.');
     } else if (result) {
-        onLogin(result.username);
+        // Successful signup
+        setInfoMessage('회원가입이 완료되었습니다. 관리자 승인 후 로그인이 가능합니다.');
+        setIsSigningUp(false); // Switch back to login view
+        setPassword('');
+        setConfirmPassword('');
     } else {
         setError('알 수 없는 오류가 발생했습니다.');
     }
@@ -58,6 +67,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     setConfirmPassword('');
     setGolfCourse('');
     setError('');
+    setInfoMessage('');
   };
 
   const toggleForm = () => {
@@ -75,6 +85,12 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
             : '이 앱은 사용자별로 데이터를 분리하여 저장합니다.'
           }
         </p>
+
+        {infoMessage && (
+            <div className="mb-4 p-3 bg-green-50 text-green-700 text-sm rounded-md border border-green-200">
+                {infoMessage}
+            </div>
+        )}
 
         {isSigningUp ? (
           <form onSubmit={handleSignUp} className="space-y-4">
@@ -128,7 +144,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
             </div>
             {error && <p className="text-sm text-red-600">{error}</p>}
             <button type="submit" className="w-full flex justify-center py-3 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors">
-              회원가입
+              회원가입 (관리자 승인 필요)
             </button>
           </form>
         ) : (

@@ -181,7 +181,7 @@ export const AdminDashboard = ({ user, onLogout }: { user: string, onLogout: () 
     }, [masterFertilizers, notificationSettings, isInitialLoadComplete, triggeredAlerts]);
 
     const summaryStats = useMemo(() => {
-        if (allUserData.length === 0) return { totalUsers: 0, totalLogs: 0, totalCost: 0, mostUsedFertilizer: 'N/A' };
+        if (allUserData.length === 0) return { totalUsers: 0, totalLogs: 0, totalCost: 0, mostUsedFertilizer: 'N/A', pendingUsers: 0 };
         const totalLogs = allUserData.reduce((sum, u) => sum + u.logCount, 0);
         const totalCost = allUserData.reduce((sum, u) => sum + u.totalCost, 0);
         const fertilizerCounts = allUserData.flatMap(u => u.logs).reduce((acc: Record<string, number>, log) => {
@@ -189,7 +189,8 @@ export const AdminDashboard = ({ user, onLogout }: { user: string, onLogout: () 
                 return acc;
             }, {} as Record<string, number>);
         const mostUsedFertilizer = Object.entries(fertilizerCounts).sort((a: [string, number], b: [string, number]) => b[1] - a[1])[0]?.[0] || 'N/A';
-        return { totalUsers: allUserData.length, totalLogs, totalCost, mostUsedFertilizer };
+        const pendingUsers = allUserData.filter(u => !u.isApproved).length;
+        return { totalUsers: allUserData.length, totalLogs, totalCost, mostUsedFertilizer, pendingUsers };
     }, [allUserData]);
     
     const userCostChartData = useMemo(() => {
@@ -747,6 +748,21 @@ export const AdminDashboard = ({ user, onLogout }: { user: string, onLogout: () 
         }
     };
 
+    const handleApproveUser = async (username: string) => {
+        if (window.confirm(`'${username}' 사용자의 가입을 승인하시겠습니까?`)) {
+            try {
+                await api.approveUser(username);
+                setAllUserData(prev => prev.map(u => 
+                    u.username === username ? { ...u, isApproved: true } : u
+                ));
+                alert("사용자가 승인되었습니다.");
+            } catch (e) {
+                console.error(e);
+                alert("사용자 승인 중 오류가 발생했습니다.");
+            }
+        }
+    };
+
     const handleSelectFertilizer = (name: string) => {
         setSelectedFertilizers(prev => {
             const newSet = new Set(prev);
@@ -902,7 +918,7 @@ export const AdminDashboard = ({ user, onLogout }: { user: string, onLogout: () 
                 <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                     <StatCard title="총 사용자 수" value={summaryStats.totalUsers} icon={<UsersIcon />} colorClasses={{bg: 'bg-indigo-100', text: 'text-indigo-600', border: 'border-indigo-500'}} />
                     <StatCard title="총 시비 기록 수" value={summaryStats.totalLogs.toLocaleString()} icon={<ClipboardListIcon />} colorClasses={{bg: 'bg-green-100', text: 'text-green-600', border: 'border-green-500'}} />
-                    <StatCard title="전체 누적 비용" value={`${Math.round(summaryStats.totalCost).toLocaleString()}원`} icon={<CurrencyWonIcon />} colorClasses={{bg: 'bg-amber-100', text: 'text-amber-600', border: 'border-amber-500'}} />
+                    <StatCard title="승인 대기 사용자" value={summaryStats.pendingUsers} icon={<BellIcon />} colorClasses={{bg: 'bg-red-100', text: 'text-red-600', border: 'border-red-500'}} />
                     <StatCard title="최다 사용 비료" value={summaryStats.mostUsedFertilizer} icon={<SparklesIcon />} colorClasses={{bg: 'bg-purple-100', text: 'text-purple-600', border: 'border-purple-500'}} />
                 </section>
                 
@@ -1231,7 +1247,7 @@ export const AdminDashboard = ({ user, onLogout }: { user: string, onLogout: () 
                      {allUserData.length > 0 ? (
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                             {allUserData.map(userData => (
-                                <div key={userData.username} className="bg-slate-50 border rounded-lg overflow-hidden transition-shadow hover:shadow-md">
+                                <div key={userData.username} className={`bg-slate-50 border rounded-lg overflow-hidden transition-shadow hover:shadow-md ${!userData.isApproved ? 'border-red-300 bg-red-50' : ''}`}>
                                     <div 
                                         className="p-4 cursor-pointer hover:bg-slate-100 transition-colors" 
                                         onClick={() => setExpandedUser(expandedUser === userData.username ? null : userData.username)}
@@ -1240,6 +1256,11 @@ export const AdminDashboard = ({ user, onLogout }: { user: string, onLogout: () 
                                             <div className="flex items-baseline gap-3">
                                                 <p className="font-bold text-lg text-slate-800">{userData.username}</p>
                                                 <p className="font-medium text-sm text-slate-600">{userData.golfCourse}</p>
+                                                {!userData.isApproved && (
+                                                    <span className="ml-2 px-2 py-0.5 bg-red-100 text-red-700 text-xs font-bold rounded-full animate-pulse border border-red-200">
+                                                        승인 대기 중
+                                                    </span>
+                                                )}
                                             </div>
                                             <span className="text-indigo-600 text-xs font-semibold flex items-center gap-1">
                                                 {expandedUser === userData.username ? '▲ 숨기기' : '▼ 상세보기'}
@@ -1269,7 +1290,15 @@ export const AdminDashboard = ({ user, onLogout }: { user: string, onLogout: () 
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="px-4 pb-2 flex justify-end border-t border-slate-100 pt-2">
+                                    <div className="px-4 pb-2 flex justify-end border-t border-slate-100 pt-2 gap-2">
+                                        {!userData.isApproved && (
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); handleApproveUser(userData.username); }}
+                                                className="flex items-center gap-1 text-xs text-white bg-green-500 hover:bg-green-600 font-bold px-3 py-1.5 rounded shadow-sm transition-colors"
+                                            >
+                                                ✅ 승인하기
+                                            </button>
+                                        )}
                                         <button 
                                             onClick={(e) => { e.stopPropagation(); handleDeleteUser(userData.username); }}
                                             className="flex items-center gap-1 text-xs text-red-500 hover:text-red-700 font-medium px-2 py-1 rounded hover:bg-red-50 transition-colors"

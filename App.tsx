@@ -7,7 +7,7 @@ import { NUTRIENTS, FERTILIZER_GUIDE, USAGE_CATEGORIES, TYPE_CATEGORIES, MONTHLY
 import * as api from './api';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, ComposedChart } from 'recharts';
 import { Chatbot } from './Chatbot';
-import { ChatIcon, LogoutIcon, CalculatorIcon, TrashIcon, CalendarIcon, ClipboardListIcon, CloseIcon, PencilIcon, PlusIcon, SparklesIcon, ChevronDownIcon, ChevronUpIcon, CameraIcon, DocumentSearchIcon, UploadIcon } from './icons';
+import { ChatIcon, LogoutIcon, CalculatorIcon, TrashIcon, CalendarIcon, ClipboardListIcon, CloseIcon, PencilIcon, PlusIcon, SparklesIcon, ChevronDownIcon, ChevronUpIcon, CameraIcon, DocumentSearchIcon, UploadIcon, DownloadIcon } from './icons';
 import { Login } from './Login';
 import { AdminDashboard } from './AdminDashboard';
 
@@ -19,12 +19,6 @@ const LoadingSpinner = () => (
             <p className="mt-4 text-lg text-slate-700 font-semibold">데이터를 불러오는 중...</p>
         </div>
     </div>
-);
-
-const DownloadIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-    </svg>
 );
 
 // --- Helper Functions (Moved to Module Scope for Reusability) ---
@@ -1793,13 +1787,13 @@ export default function TurfFertilizerApp() {
                                 {visibleNutrients.K && <Bar dataKey="K" name="칼륨(K) 투입" fill="#f97316" barSize={12} />}
 
                                 {analysisCategory !== 'all' && visibleNutrients.N && (
-                                    <Line type="monotone" dataKey="guideN" name={manualPlanMode ? "질소(N) 목표(계획)" : "질소(N) 목표(표준)"} stroke="#15803d" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+                                    <Line type="monotone" dataKey="guideN" name={manualPlanMode ? "질소(N) 목표(계획)" : "질소(N) 목표(표준)"} stroke="#15803d" strokeWidth={3} strokeDasharray="3 3" dot={{r: 3, strokeWidth: 1}} />
                                 )}
                                 {analysisCategory !== 'all' && visibleNutrients.P && (
-                                    <Line type="monotone" dataKey="guideP" name={manualPlanMode ? "인산(P) 목표(계획)" : "인산(P) 목표(표준)"} stroke="#1d4ed8" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+                                    <Line type="monotone" dataKey="guideP" name={manualPlanMode ? "인산(P) 목표(계획)" : "인산(P) 목표(표준)"} stroke="#1d4ed8" strokeWidth={3} strokeDasharray="3 3" dot={{r: 3, strokeWidth: 1}} />
                                 )}
                                 {analysisCategory !== 'all' && visibleNutrients.K && (
-                                    <Line type="monotone" dataKey="guideK" name={manualPlanMode ? "칼륨(K) 목표(계획)" : "칼륨(K) 목표(표준)"} stroke="#c2410c" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+                                    <Line type="monotone" dataKey="guideK" name={manualPlanMode ? "칼륨(K) 목표(계획)" : "칼륨(K) 목표(표준)"} stroke="#c2410c" strokeWidth={3} strokeDasharray="3 3" dot={{r: 3, strokeWidth: 1}} />
                                 )}
                             </ComposedChart>
                         </ResponsiveContainer>
@@ -1821,11 +1815,13 @@ export default function TurfFertilizerApp() {
                                 <th className="p-2 border text-green-700 bg-green-50">질소 (N)</th>
                                 <th className="p-2 border text-blue-700 bg-blue-50">인산 (P)</th>
                                 <th className="p-2 border text-orange-700 bg-orange-50">칼륨 (K)</th>
+                                <th className="p-2 border text-slate-700 bg-slate-200">성분 합계 (g/㎡)</th>
                             </tr>
                         </thead>
                         <tbody>
                             {monthlyNutrientChartData.map((data) => {
                                 const isZero = data.N === 0 && data.P === 0 && data.K === 0;
+                                const monthlyTotal = data.N + data.P + data.K;
                                 return (
                                     <tr key={data.month} className={`hover:bg-slate-50 border-b ${isZero ? 'text-slate-300' : 'text-slate-700'}`}>
                                         <td className="p-2 border sticky left-0 bg-white font-medium">{data.month}</td>
@@ -1841,6 +1837,9 @@ export default function TurfFertilizerApp() {
                                             <div>{data.K > 0 ? data.K.toFixed(2) : '-'}</div>
                                             {analysisCategory !== 'all' && <div className="text-[10px] text-slate-400">목표: {data.guideK}</div>}
                                         </td>
+                                        <td className="p-2 border bg-slate-50 font-semibold text-slate-800">
+                                            {monthlyTotal > 0 ? monthlyTotal.toFixed(2) : '-'}
+                                        </td>
                                     </tr>
                                 );
                             })}
@@ -1854,6 +1853,9 @@ export default function TurfFertilizerApp() {
                                 </td>
                                 <td className="p-2 text-orange-800">
                                     {monthlyNutrientChartData.reduce((sum, item) => sum + item.K, 0).toFixed(2)}
+                                </td>
+                                <td className="p-2 text-slate-900 bg-slate-200">
+                                    {monthlyNutrientChartData.reduce((sum, item) => sum + item.N + item.P + item.K, 0).toFixed(2)}
                                 </td>
                             </tr>
                         </tbody>
