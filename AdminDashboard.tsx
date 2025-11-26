@@ -509,6 +509,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             Ni: Number(newFertilizer.Ni || 0),
             Co: Number(newFertilizer.Co || 0),
             V: Number(newFertilizer.V || 0),
+            aminoAcid: Number(newFertilizer.aminoAcid || 0),
             price: Number(newFertilizer.price || 0),
             unit: newFertilizer.unit,
             rate: newFertilizer.rate,
@@ -537,7 +538,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 {
                     "name": "Product Name",
                     "usage": "One of ['그린', '티', '페어웨이']",
-                    "type": "One of ['완효성', '액상', '수용성', '4종복합비료']",
+                    "type": "One of ['완효성', '액상', '수용성', '4종복합비료', '기능성제제', '토양개량제']",
                     "unit": "Packaging Unit (e.g., '20kg')",
                     "price": Number (approximate or 0 if unknown),
                     "rate": "Recommended Rate (e.g., '20g/㎡')",
@@ -546,14 +547,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                     "K": Number (Percentage),
                     "Ca": Number, "Mg": Number, "S": Number, "Fe": Number, "Mn": Number, 
                     "Zn": Number, "Cu": Number, "B": Number, "Mo": Number, 
-                    "Cl": Number, "Na": Number, "Si": Number, "Ni": Number, "Co": Number, "V": Number
+                    "Cl": Number, "Na": Number, "Si": Number, "Ni": Number, "Co": Number, "V": Number,
+                    "aminoAcid": Number (Percentage of Amino Acids if present)
                 }
                 
                 Important Rules:
                 1. If 'usage' is unknown or ambiguous, infer it from the context (e.g., 'fine turf' implies '그린', 'sports field' implies '페어웨이'). If completely unknown, default to '그린'.
-                2. If 'type' is unknown, infer it (e.g., 'liquid' implies '액상', 'slow release' implies '완효성'). If completely unknown, default to '완효성'.
+                2. If 'type' is unknown, infer it. 'Soil conditioner' -> '토양개량제', 'Functional' -> '기능성제제'. Default to '완효성'.
                 3. Ensure all nutrient values are numbers (percentages). If not found, use 0.
-                4. Do NOT include any markdown formatting or explanations. Just the raw JSON.
+                4. Extract amino acid percentage if mentioned (e.g., "Amino Acid 10%" -> 10).
+                5. Do NOT include any markdown formatting or explanations. Just the raw JSON.
                 
                 Input Data:
                 ${promptText}
@@ -579,7 +582,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 ...data,
                 // Ensure usage and type are valid enum values
                 usage: ['그린', '티', '페어웨이'].includes(data.usage) ? data.usage : '그린',
-                type: ['완효성', '액상', '수용성', '4종복합비료'].includes(data.type) ? data.type : '완효성',
+                type: ['완효성', '액상', '수용성', '4종복합비료', '기능성제제', '토양개량제'].includes(data.type) ? data.type : '완효성',
             }));
             
             // Switch to form view implicitly by user seeing fields populated
@@ -866,6 +869,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                                                     f.usage === '티' ? 'bg-blue-100 text-blue-800' :
                                                     'bg-orange-100 text-orange-800'
                                                 }`}>{f.usage}</span>
+                                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{f.type}</span>
                                                 <h4 className="font-bold text-slate-800">{f.name}</h4>
                                             </div>
                                             <div className="text-xs text-slate-600 space-y-1">
@@ -991,6 +995,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                                                 <option value="액상">액상</option>
                                                 <option value="수용성">수용성</option>
                                                 <option value="4종복합비료">4종복합</option>
+                                                <option value="기능성제제">기능성제제</option>
+                                                <option value="토양개량제">토양개량제</option>
                                             </select>
                                         </div>
                                     </div>
@@ -1008,6 +1014,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                                              <div><label className="text-[10px]">Fe</label><input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.Fe} onChange={e => setNewFertilizer({...newFertilizer, Fe: Number(e.target.value)})} /></div>
                                         </div>
                                     </div>
+                                    {/* Micronutrients and Others Section */}
+                                    <div className="bg-orange-50 p-3 rounded border border-orange-100">
+                                        <p className="text-xs font-bold text-orange-800 mb-2">미량요소 및 기타 (%)</p>
+                                        <div className="grid grid-cols-5 gap-2 mb-2">
+                                            <div><label className="text-[10px]">Mn</label><input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.Mn} onChange={e => setNewFertilizer({...newFertilizer, Mn: Number(e.target.value)})} /></div>
+                                            <div><label className="text-[10px]">Zn</label><input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.Zn} onChange={e => setNewFertilizer({...newFertilizer, Zn: Number(e.target.value)})} /></div>
+                                            <div><label className="text-[10px]">Cu</label><input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.Cu} onChange={e => setNewFertilizer({...newFertilizer, Cu: Number(e.target.value)})} /></div>
+                                            <div><label className="text-[10px]">B</label><input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.B} onChange={e => setNewFertilizer({...newFertilizer, B: Number(e.target.value)})} /></div>
+                                            <div><label className="text-[10px]">Mo</label><input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.Mo} onChange={e => setNewFertilizer({...newFertilizer, Mo: Number(e.target.value)})} /></div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div>
+                                                <label className="text-[10px] font-bold text-slate-700">아미노산</label>
+                                                <input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.aminoAcid} onChange={e => setNewFertilizer({...newFertilizer, aminoAcid: Number(e.target.value)})} placeholder="%" />
+                                            </div>
+                                        </div>
+                                    </div>
+
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
                                             <label className="block text-xs font-bold text-slate-600 mb-1">포장단위</label>

@@ -2,7 +2,7 @@
 export const NUTRIENTS = ['N','P','K','Ca','Mg','S','Fe','Mn','Zn','Cu','B','Mo','Cl','Na','Si','Ni','Co','V'];
 
 export const USAGE_CATEGORIES = ['그린', '티', '페어웨이'];
-export const TYPE_CATEGORIES = ['완효성', '액상', '4종복합비료', '수용성', '기능성제제', '유기농'];
+export const TYPE_CATEGORIES = ['완효성', '액상', '4종복합비료', '수용성', '기능성제제', '유기농', '토양개량제'];
 
 // Annual N-P-K recommendation guide (g/m²)
 export const FERTILIZER_GUIDE: { [key: string]: { N: number, P: number, K: number } } = {

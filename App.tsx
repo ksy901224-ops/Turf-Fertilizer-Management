@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { GoogleGenAI } from '@google/genai';
@@ -1122,6 +1123,46 @@ export default function TurfFertilizerApp() {
     
     return html;
   }, [aiResponse]);
+  
+  // Custom Tooltip for Combined Chart to show Total Amount
+  const CustomChartTooltip = ({ active, payload, label }: any) => {
+      if (active && payload && payload.length) {
+          // Extract data from payload
+          const n = payload.find((p:any) => p.dataKey === 'N')?.value || 0;
+          const p = payload.find((p:any) => p.dataKey === 'P')?.value || 0;
+          const k = payload.find((p:any) => p.dataKey === 'K')?.value || 0;
+          const total = n + p + k;
+
+          return (
+              <div className="bg-white p-3 border shadow-lg rounded text-xs">
+                  <p className="font-bold mb-2 text-slate-700">{label}</p>
+                  <div className="space-y-1">
+                      <p className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                          <span className="text-slate-600">질소(N):</span>
+                          <span className="font-bold text-green-700">{n.toFixed(2)} g/㎡</span>
+                      </p>
+                      <p className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                          <span className="text-slate-600">인산(P):</span>
+                          <span className="font-bold text-blue-700">{p.toFixed(2)} g/㎡</span>
+                      </p>
+                      <p className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-orange-500"></span>
+                          <span className="text-slate-600">칼륨(K):</span>
+                          <span className="font-bold text-orange-700">{k.toFixed(2)} g/㎡</span>
+                      </p>
+                  </div>
+                  <div className="border-t my-2 border-slate-200"></div>
+                  <p className="font-bold text-slate-800 flex justify-between gap-4">
+                      <span>총 투입량 (순성분):</span>
+                      <span>{total.toFixed(2)} g/㎡</span>
+                  </p>
+              </div>
+          );
+      }
+      return null;
+  };
 
   if (!user) {
     return <Login onLogin={handleLogin} />;
@@ -1765,78 +1806,39 @@ export default function TurfFertilizerApp() {
                 </div>
             )}
             
-            {/* --- NEW CHART VISUALIZATION (Split N/P/K) --- */}
+            {/* --- NEW CHART VISUALIZATION (Consolidated N/P/K) --- */}
             <div className="mb-8">
                 <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-bold text-slate-700 text-lg">월별 영양소 투입 상세 비교</h3>
+                    <h3 className="font-bold text-slate-700 text-lg">월별 통합 영양소 투입 현황 (N-P-K)</h3>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* Nitrogen Chart */}
-                    <div className="bg-white p-4 rounded-xl border border-green-100 shadow-sm">
-                        <h4 className="text-sm font-bold text-green-800 mb-2 flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-green-500"></span> 질소 (N)
-                        </h4>
-                        <div className="h-60">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <ComposedChart data={monthlyNutrientChartData} margin={{top: 10, right: 10, left: 0, bottom: 0}}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                    <XAxis dataKey="month" fontSize={10} tickFormatter={(val) => `${parseInt(val.split('-')[1])}월`} />
-                                    <YAxis fontSize={10} unit="g" />
-                                    <Tooltip contentStyle={{fontSize: '12px'}} formatter={(val: number) => `${val}g`} labelFormatter={(l) => `${l}월`} />
-                                    <Bar dataKey="N" name="투입량" fill="#22c55e" barSize={12} radius={[2, 2, 0, 0]} />
-                                    {analysisCategory !== 'all' && (
-                                        <Line type="monotone" dataKey="guideN" name="권장량" stroke="#15803d" strokeWidth={2} strokeDasharray="4 4" dot={{r: 2}} />
-                                    )}
-                                    <Legend wrapperStyle={{fontSize: '10px'}} />
-                                </ComposedChart>
-                            </ResponsiveContainer>
-                        </div>
-                    </div>
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                    <div className="h-80">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <ComposedChart data={monthlyNutrientChartData} margin={{top: 10, right: 10, left: 0, bottom: 0}}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                <XAxis dataKey="month" fontSize={12} tickFormatter={(val) => `${parseInt(val.split('-')[1])}월`} />
+                                <YAxis fontSize={12} label={{ value: 'g/㎡', angle: -90, position: 'insideLeft' }} />
+                                <Tooltip content={<CustomChartTooltip />} cursor={{fill: 'transparent'}} />
+                                <Legend wrapperStyle={{fontSize: '12px'}} />
+                                
+                                {/* Actual Inputs (Bars) */}
+                                <Bar dataKey="N" name="질소(N)" fill="#22c55e" barSize={15} />
+                                <Bar dataKey="P" name="인산(P)" fill="#3b82f6" barSize={15} />
+                                <Bar dataKey="K" name="칼륨(K)" fill="#f97316" barSize={15} />
 
-                    {/* Phosphorus Chart */}
-                    <div className="bg-white p-4 rounded-xl border border-blue-100 shadow-sm">
-                        <h4 className="text-sm font-bold text-blue-800 mb-2 flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-blue-500"></span> 인산 (P)
-                        </h4>
-                        <div className="h-60">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <ComposedChart data={monthlyNutrientChartData} margin={{top: 10, right: 10, left: 0, bottom: 0}}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                    <XAxis dataKey="month" fontSize={10} tickFormatter={(val) => `${parseInt(val.split('-')[1])}월`} />
-                                    <YAxis fontSize={10} unit="g" />
-                                    <Tooltip contentStyle={{fontSize: '12px'}} formatter={(val: number) => `${val}g`} labelFormatter={(l) => `${l}월`} />
-                                    <Bar dataKey="P" name="투입량" fill="#3b82f6" barSize={12} radius={[2, 2, 0, 0]} />
-                                    {analysisCategory !== 'all' && (
-                                        <Line type="monotone" dataKey="guideP" name="권장량" stroke="#1d4ed8" strokeWidth={2} strokeDasharray="4 4" dot={{r: 2}} />
-                                    )}
-                                    <Legend wrapperStyle={{fontSize: '10px'}} />
-                                </ComposedChart>
-                            </ResponsiveContainer>
-                        </div>
+                                {/* Guides (Lines) - Only show if specific category is selected */}
+                                {analysisCategory !== 'all' && (
+                                    <>
+                                        <Line type="monotone" dataKey="guideN" name="권장 N" stroke="#15803d" strokeWidth={2} strokeDasharray="4 4" dot={{r: 3}} />
+                                        <Line type="monotone" dataKey="guideP" name="권장 P" stroke="#1d4ed8" strokeWidth={2} strokeDasharray="4 4" dot={{r: 3}} />
+                                        <Line type="monotone" dataKey="guideK" name="권장 K" stroke="#c2410c" strokeWidth={2} strokeDasharray="4 4" dot={{r: 3}} />
+                                    </>
+                                )}
+                            </ComposedChart>
+                        </ResponsiveContainer>
                     </div>
-
-                    {/* Potassium Chart */}
-                    <div className="bg-white p-4 rounded-xl border border-orange-100 shadow-sm">
-                         <h4 className="text-sm font-bold text-orange-800 mb-2 flex items-center gap-2">
-                            <span className="w-2 h-2 rounded-full bg-orange-500"></span> 칼륨 (K)
-                        </h4>
-                        <div className="h-60">
-                            <ResponsiveContainer width="100%" height="100%">
-                                <ComposedChart data={monthlyNutrientChartData} margin={{top: 10, right: 10, left: 0, bottom: 0}}>
-                                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                    <XAxis dataKey="month" fontSize={10} tickFormatter={(val) => `${parseInt(val.split('-')[1])}월`} />
-                                    <YAxis fontSize={10} unit="g" />
-                                    <Tooltip contentStyle={{fontSize: '12px'}} formatter={(val: number) => `${val}g`} labelFormatter={(l) => `${l}월`} />
-                                    <Bar dataKey="K" name="투입량" fill="#f97316" barSize={12} radius={[2, 2, 0, 0]} />
-                                    {analysisCategory !== 'all' && (
-                                        <Line type="monotone" dataKey="guideK" name="권장량" stroke="#c2410c" strokeWidth={2} strokeDasharray="4 4" dot={{r: 2}} />
-                                    )}
-                                    <Legend wrapperStyle={{fontSize: '10px'}} />
-                                </ComposedChart>
-                            </ResponsiveContainer>
-                        </div>
-                    </div>
+                    <p className="text-xs text-slate-400 mt-2 text-center">* 막대는 실제 투입량(순성분), 점선은 권장/목표량입니다. 그래프에 마우스를 올리면 총 투입량을 확인할 수 있습니다.</p>
                 </div>
             </div>
             

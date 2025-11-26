@@ -2,7 +2,7 @@
 export interface Fertilizer {
   name: string;
   usage: '그린' | '티' | '페어웨이';
-  type: '완효성' | '액상' | '4종복합비료' | '수용성' | '기능성제제' | '유기농';
+  type: '완효성' | '액상' | '4종복합비료' | '수용성' | '기능성제제' | '유기농' | '토양개량제';
   N: number;
   P: number;
   K: number;
@@ -21,6 +21,7 @@ export interface Fertilizer {
   Ni: number;
   Co: number;
   V: number;
+  aminoAcid?: number; // New field for Amino Acids
   price: number;
   unit: string;
   rate: string;
