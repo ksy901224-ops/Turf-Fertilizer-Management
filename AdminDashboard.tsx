@@ -4,13 +4,54 @@ import * as api from './api';
 import * as XLSX from 'xlsx';
 import { GoogleGenAI } from '@google/genai';
 import { UserDataSummary, Fertilizer, LogEntry } from './types';
-import { LogoutIcon, DashboardIcon, UsersIcon, PlusIcon, TrashIcon, CloseIcon, ClipboardListIcon, CameraIcon, DocumentSearchIcon, UploadIcon, SparklesIcon } from './icons';
+import { LogoutIcon, DashboardIcon, UsersIcon, PlusIcon, TrashIcon, CloseIcon, ClipboardListIcon, CameraIcon, DocumentSearchIcon, UploadIcon, SparklesIcon, DownloadIcon } from './icons';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 
 interface AdminDashboardProps {
     user: string;
     onLogout: () => void;
 }
+
+// --- Helper for Excel Export ---
+const exportUserLogsToExcel = (userData: UserDataSummary) => {
+    if (!userData.logs || userData.logs.length === 0) {
+        alert(`${userData.username}님의 기록된 데이터가 없습니다.`);
+        return;
+    }
+
+    const dataToExport = userData.logs.map(log => {
+        const row: any = {
+            '날짜': log.date,
+            '사용자': userData.username,
+            '골프장': userData.golfCourse,
+            '제품명': log.product,
+            '구분': log.usage,
+            '면적(㎡)': log.area,
+            '사용량': `${log.applicationRate}${log.applicationUnit}`,
+            '총 비용(원)': Math.round(log.totalCost),
+        };
+        
+        // Add nutrients
+        const NUTRIENTS = ['N','P','K','Ca','Mg','S','Fe','Mn','Zn','Cu','B','Mo','Cl','Na','Si','Ni','Co','V'];
+        NUTRIENTS.forEach(n => {
+            if (log.nutrients && log.nutrients[n] > 0) {
+                row[`${n} (g)`] = log.nutrients[n];
+            }
+        });
+        
+        return row;
+    });
+
+    const worksheet = XLSX.utils.json_to_sheet(dataToExport);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, '시비 일지');
+    
+    // Auto-width for columns (simple estimation)
+    const wscols = Object.keys(dataToExport[0]).map(k => ({ wch: Math.max(k.length * 2, 10) }));
+    worksheet['!cols'] = wscols;
+
+    XLSX.writeFile(workbook, `${userData.username}_${userData.golfCourse}_시비일지.xlsx`);
+};
 
 // --- User Detail Modal for Analytics ---
 interface UserDetailModalProps {
@@ -97,7 +138,15 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose }) 
                         </h2>
                         <p className="text-slate-500 text-sm mt-1">총 기록: {userData.logCount}건 | 가입일: {userData.isApproved ? '승인됨' : '대기중'}</p>
                     </div>
-                    <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><CloseIcon /></button>
+                    <div className="flex gap-2">
+                        <button 
+                            onClick={() => exportUserLogsToExcel(userData)}
+                            className="flex items-center gap-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded shadow transition-colors"
+                        >
+                            <DownloadIcon className="w-4 h-4" /> 엑셀 저장
+                        </button>
+                        <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><CloseIcon /></button>
+                    </div>
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -763,12 +812,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                                                         >
                                                             상세
                                                         </button>
+                                                        <button
+                                                            onClick={() => exportUserLogsToExcel(u)}
+                                                            className="text-green-500 hover:text-green-700 p-1.5 rounded hover:bg-green-50 transition-colors text-xs border border-green-200"
+                                                            title="엑셀 내보내기"
+                                                        >
+                                                            <DownloadIcon className="w-4 h-4" />
+                                                        </button>
                                                         <button 
                                                             onClick={() => handleDeleteUser(u.username)}
-                                                            className="text-red-400 hover:text-red-600 p-2 rounded-full hover:bg-red-50 transition-colors"
+                                                            className="text-red-400 hover:text-red-600 p-1.5 rounded-full hover:bg-red-50 transition-colors"
                                                             title="사용자 삭제"
                                                         >
-                                                            <TrashIcon />
+                                                            <TrashIcon className="w-4 h-4" />
                                                         </button>
                                                     </td>
                                                 </tr>
