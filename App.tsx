@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { GoogleGenAI } from '@google/genai';
@@ -349,9 +348,6 @@ export default function TurfFertilizerApp() {
   // Fertilizer List Filter State
   const [activeFertilizerListTab, setActiveFertilizerListTab] = useState<'전체' | '그린' | '티' | '페어웨이'>('전체');
   
-  // Fertilizer Selection Search
-  const [selectionSearchTerm, setSelectionSearchTerm] = useState('');
-
   // Log entry form states (Tabbed)
   const [activeLogTab, setActiveLogTab] = useState<'그린' | '티' | '페어웨이'>('그린');
   const [logGreenArea, setLogGreenArea] = useState('');
@@ -359,6 +355,9 @@ export default function TurfFertilizerApp() {
   const [logFairwayArea, setLogFairwayArea] = useState('');
   const [date, setDate] = useState('');
   const [applicationRate, setApplicationRate] = useState('');
+  const [logSearchTerm, setLogSearchTerm] = useState('');
+  const [isProductSelectOpen, setIsProductSelectOpen] = useState(false);
+
 
   // Replaces graphView
   const [tablePeriodView, setTablePeriodView] = useState<'daily' | 'monthly' | 'yearly'>('monthly');
@@ -571,7 +570,12 @@ export default function TurfFertilizerApp() {
         product: selectedProduct.name,
         area: parsedArea,
         totalCost: Number(totalCost.toFixed(2)),
-        nutrients: nutrients,
+        nutrients: nutrients, // Already calculated as pure component grams per m² by getApplicationDetails in the previous step? 
+                              // Wait, getApplicationDetails returns TOTAL grams for the WHOLE area if >1m2. 
+                              // BUT for LogEntry 'nutrients' field, we want total grams applied to the area.
+                              // The analysis chart divides this by area later.
+                              // Let's verify getApplicationDetails.
+                              // getApplicationDetails returns total grams of nutrients for the given area. Correct.
         applicationRate: parsedApplicationRate,
         applicationUnit: rateUnit,
         usage: usage,
@@ -581,6 +585,8 @@ export default function TurfFertilizerApp() {
     setLog(prev => [entry, ...prev].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
     
     alert(`완료: ${usage} 구역에 시비 기록이 추가되었습니다.`);
+    setIsProductSelectOpen(false); // Close product select if open
+    setLogSearchTerm('');
   };
 
   const removeLogEntry = (idToRemove: string) => {
@@ -595,6 +601,56 @@ export default function TurfFertilizerApp() {
         const area = parseFloat(areaStr) || 0;
         return getApplicationDetails(selectedProduct, area, parsedApplicationRate).totalCost;
     }, [selectedProduct, activeLogTab, logGreenArea, logTeeArea, logFairwayArea, applicationRate]);
+
+  // Group Fertilizers for Select
+  const groupedFertilizers = useMemo(() => {
+      let filtered = fertilizers;
+      if (logSearchTerm) {
+          filtered = filtered.filter(f => f.name.toLowerCase().includes(logSearchTerm.toLowerCase()));
+      }
+      
+      const groups: Record<string, Fertilizer[]> = {
+          '그린': [], '티': [], '페어웨이': []
+      };
+      
+      filtered.forEach(f => {
+          if (groups[f.usage]) groups[f.usage].push(f);
+          else {
+              // Fallback or other
+              if(!groups['기타']) groups['기타'] = [];
+              groups['기타'].push(f);
+          }
+      });
+      return groups;
+  }, [fertilizers, logSearchTerm]);
+
+  const filteredLogForAnalysis = useMemo(() => {
+    if (analysisCategory === 'all') return log;
+    return log.filter(entry => entry.usage === analysisCategory);
+  }, [log, analysisCategory]);
+
+  // Aggregate Product Quantity Data
+  const aggregatedProductQuantity = useMemo(() => {
+    const data: Record<string, { totalAmount: number, unit: string, cost: number }> = {};
+    
+    filteredLogForAnalysis.forEach(entry => {
+        // Find product to check if liquid
+        const product = fertilizers.find(f => f.name === entry.product);
+        const isLiquid = product?.type === '액상' || entry.applicationUnit.includes('ml');
+        const amount = (entry.area * entry.applicationRate) / 1000; // kg or L
+        
+        if (!data[entry.product]) {
+            data[entry.product] = { totalAmount: 0, unit: isLiquid ? 'L' : 'kg', cost: 0 };
+        }
+        data[entry.product].totalAmount += amount;
+        data[entry.product].cost += entry.totalCost;
+    });
+    
+    return Object.entries(data)
+        .sort((a,b) => b[1].totalAmount - a[1].totalAmount)
+        .slice(0, 5); // Top 5
+  }, [filteredLogForAnalysis, fertilizers]);
+
 
   const categorySummaries = useMemo(() => {
     const initialSummary = {
@@ -677,11 +733,6 @@ export default function TurfFertilizerApp() {
     });
   };
 
-  const filteredLogForAnalysis = useMemo(() => {
-    if (analysisCategory === 'all') return log;
-    return log.filter(entry => entry.usage === analysisCategory);
-  }, [log, analysisCategory]);
-  
     // NEW: Monthly Nutrient Chart Data with Guide Comparison
     const monthlyNutrientChartData = useMemo(() => {
         const data: Record<string, { 
@@ -1600,31 +1651,83 @@ export default function TurfFertilizerApp() {
             </h2>
             
             <div className="space-y-6">
-                 {/* Product & Date Selection */}
+                 {/* IMPROVED PRODUCT SELECTION */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                     <div>
+                     <div className="relative">
                         <label className="block text-sm font-medium text-slate-700 mb-1">비료 제품 선택</label>
-                        <select 
-                            value={selectedProduct?.name || ''} 
-                            onChange={(e) => {
-                                const prod = fertilizers.find(f => f.name === e.target.value) || null;
-                                setSelectedProduct(prod);
-                                if (prod) {
-                                    const rateVal = parseRateValue(prod.rate);
-                                    setApplicationRate(rateVal > 0 ? rateVal.toString() : '');
-                                    setDate(new Date().toISOString().split('T')[0]);
-                                }
-                            }}
-                            className="w-full p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                        <div 
+                            className="w-full p-2 border border-slate-300 rounded-md cursor-pointer flex justify-between items-center bg-white"
+                            onClick={() => setIsProductSelectOpen(!isProductSelectOpen)}
                         >
-                            <option value="">비료를 선택하세요</option>
-                            {fertilizers.map(f => (
-                                <option key={f.name} value={f.name}>{f.name} ({f.usage})</option>
-                            ))}
-                        </select>
+                            <span className={selectedProduct ? 'text-slate-800' : 'text-slate-400'}>
+                                {selectedProduct ? `${selectedProduct.name} (${selectedProduct.usage})` : '비료를 선택하세요'}
+                            </span>
+                            <ChevronDownIcon className="text-slate-400 w-4 h-4" />
+                        </div>
+                        
+                        {isProductSelectOpen && (
+                            <div className="absolute top-full left-0 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-50 max-h-80 flex flex-col">
+                                <div className="p-2 border-b bg-slate-50 sticky top-0 z-10">
+                                    <input 
+                                        type="text" 
+                                        placeholder="비료명 검색..." 
+                                        value={logSearchTerm}
+                                        onChange={(e) => setLogSearchTerm(e.target.value)}
+                                        onClick={(e) => e.stopPropagation()}
+                                        autoFocus
+                                        className="w-full p-2 text-sm border rounded focus:ring-2 focus:ring-blue-500 outline-none"
+                                    />
+                                </div>
+                                <div className="overflow-y-auto flex-1">
+                                    {['그린', '티', '페어웨이', '기타'].map(group => {
+                                        const items = groupedFertilizers[group] || [];
+                                        if (items.length === 0) return null;
+                                        return (
+                                            <div key={group}>
+                                                <div className="px-3 py-1 bg-slate-100 text-xs font-bold text-slate-500 uppercase">{group}</div>
+                                                {items.map(f => (
+                                                    <div 
+                                                        key={f.name}
+                                                        onClick={() => {
+                                                            setSelectedProduct(f);
+                                                            const rateVal = parseRateValue(f.rate);
+                                                            setApplicationRate(rateVal > 0 ? rateVal.toString() : '');
+                                                            setDate(new Date().toISOString().split('T')[0]);
+                                                            setIsProductSelectOpen(false);
+                                                            setLogSearchTerm('');
+                                                        }}
+                                                        className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm flex justify-between items-center"
+                                                    >
+                                                        <span className="font-medium text-slate-700">{f.name}</span>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-[10px] bg-slate-100 px-1.5 rounded text-slate-500">{f.type}</span>
+                                                            <span className="text-xs text-slate-400">{f.N}-{f.P}-{f.K}</span>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        );
+                                    })}
+                                    {Object.keys(groupedFertilizers).every(k => groupedFertilizers[k].length === 0) && (
+                                        <div className="p-4 text-center text-slate-400 text-sm">검색 결과가 없습니다.</div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                        
+                        {/* Selected Product Info */}
+                        {selectedProduct && (
+                            <div className="mt-2 text-xs text-slate-500 bg-slate-50 p-2 rounded border flex gap-3">
+                                <span>성분: <strong>{selectedProduct.N}-{selectedProduct.P}-{selectedProduct.K}</strong></span>
+                                <span>권장량: <strong>{selectedProduct.rate}</strong></span>
+                                {selectedProduct.stock !== undefined && (
+                                    <span>재고: <strong className={selectedProduct.stock <= 5 ? 'text-red-500' : 'text-slate-700'}>{selectedProduct.stock}</strong></span>
+                                )}
+                            </div>
+                        )}
                         
                         {/* Frequent Combinations */}
-                        {frequentCombinations.length > 0 && (
+                        {frequentCombinations.length > 0 && !selectedProduct && (
                             <div className="mt-2 flex flex-wrap gap-2">
                                 <span className="text-xs text-slate-500 self-center">자주 사용:</span>
                                 {frequentCombinations.map((combo, idx) => (
@@ -1633,7 +1736,7 @@ export default function TurfFertilizerApp() {
                                         onClick={() => handleQuickAdd(combo.name, combo.rate)}
                                         className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs rounded-full border transition-colors"
                                     >
-                                        {combo.name} ({combo.rate}{combo.unit})
+                                        {combo.name}
                                     </button>
                                 ))}
                             </div>
@@ -1806,10 +1909,56 @@ export default function TurfFertilizerApp() {
                 </div>
             )}
             
+            {/* NEW: Total Product Quantity Summary */}
+            {analysisCategory !== 'all' && (
+                <div className="mb-8 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-sm">
+                        <h4 className="font-bold text-slate-700 text-sm mb-3">📦 제품 투입 총량 (Top 5)</h4>
+                        <div className="space-y-2">
+                            {aggregatedProductQuantity.length > 0 ? aggregatedProductQuantity.map(([name, data]) => (
+                                <div key={name} className="flex justify-between items-center text-sm p-2 bg-white rounded border border-slate-100">
+                                    <span className="text-slate-700 font-medium truncate flex-1">{name}</span>
+                                    <div className="text-right">
+                                        <span className="font-bold text-slate-900">{data.totalAmount.toFixed(1)} {data.unit}</span>
+                                        <div className="text-[10px] text-slate-400">{Math.round(data.cost).toLocaleString()}원</div>
+                                    </div>
+                                </div>
+                            )) : (
+                                <p className="text-xs text-slate-400 text-center py-2">데이터가 없습니다.</p>
+                            )}
+                        </div>
+                    </div>
+                    {/* Placeholder for future expansion or another summary */}
+                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-center items-center text-center">
+                         <p className="text-sm font-bold text-slate-700 mb-1">총 누적 투입 순성분 (연간)</p>
+                         <div className="flex gap-4 mt-2">
+                             <div>
+                                 <span className="text-xs text-slate-500 block">N (질소)</span>
+                                 <span className="text-xl font-bold text-green-600">
+                                     {monthlyNutrientChartData.reduce((acc, cur) => acc + cur.N, 0).toFixed(1)}g
+                                 </span>
+                             </div>
+                             <div>
+                                 <span className="text-xs text-slate-500 block">P (인산)</span>
+                                 <span className="text-xl font-bold text-blue-600">
+                                     {monthlyNutrientChartData.reduce((acc, cur) => acc + cur.P, 0).toFixed(1)}g
+                                 </span>
+                             </div>
+                             <div>
+                                 <span className="text-xs text-slate-500 block">K (칼륨)</span>
+                                 <span className="text-xl font-bold text-orange-600">
+                                     {monthlyNutrientChartData.reduce((acc, cur) => acc + cur.K, 0).toFixed(1)}g
+                                 </span>
+                             </div>
+                         </div>
+                    </div>
+                </div>
+            )}
+            
             {/* --- NEW CHART VISUALIZATION (Consolidated N/P/K) --- */}
             <div className="mb-8">
                 <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-bold text-slate-700 text-lg">월별 통합 영양소 투입 현황 (N-P-K)</h3>
+                    <h3 className="font-bold text-slate-700 text-lg">월별 통합 순성분(Nutrient) 투입 현황</h3>
                 </div>
 
                 <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
@@ -1823,9 +1972,9 @@ export default function TurfFertilizerApp() {
                                 <Legend wrapperStyle={{fontSize: '12px'}} />
                                 
                                 {/* Actual Inputs (Bars) */}
-                                <Bar dataKey="N" name="질소(N)" fill="#22c55e" barSize={15} />
-                                <Bar dataKey="P" name="인산(P)" fill="#3b82f6" barSize={15} />
-                                <Bar dataKey="K" name="칼륨(K)" fill="#f97316" barSize={15} />
+                                <Bar dataKey="N" name="질소(N) 순성분" fill="#22c55e" barSize={15} />
+                                <Bar dataKey="P" name="인산(P) 순성분" fill="#3b82f6" barSize={15} />
+                                <Bar dataKey="K" name="칼륨(K) 순성분" fill="#f97316" barSize={15} />
 
                                 {/* Guides (Lines) - Only show if specific category is selected */}
                                 {analysisCategory !== 'all' && (
