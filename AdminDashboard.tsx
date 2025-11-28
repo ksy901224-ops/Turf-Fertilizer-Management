@@ -608,10 +608,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
 
         if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.name.endsWith('.csv')) {
             const reader = new FileReader();
-            reader.onload = async (evt) => {
-                const target = evt.target as FileReader;
-                const bstr = target.result as string;
-                if (!bstr) return;
+            reader.onload = async () => {
+                const bstr = reader.result;
+                if (typeof bstr !== 'string') return;
                 const wb = XLSX.read(bstr, { type: 'binary' });
                 const wsname = wb.SheetNames[0];
                 const ws = wb.Sheets[wsname];
@@ -621,10 +620,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             reader.readAsBinaryString(file);
         } else if (file.type.startsWith('image/') || file.type === 'application/pdf') {
             const reader = new FileReader();
-            reader.onloadend = async (evt) => {
-                const target = evt.target as FileReader;
-                const result = target.result as string;
-                if (!result) return;
+            reader.onloadend = async () => {
+                const result = reader.result;
+                if (typeof result !== 'string') return;
+                
                 const base64Data = result.split(',')[1];
                 const mimeType = file.type;
                 
@@ -639,10 +638,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         } else {
              // Treat as text file
             const reader = new FileReader();
-            reader.onload = async (evt) => {
-                const target = evt.target as FileReader;
-                const text = target.result as string;
-                if (!text) return;
+            reader.onload = async () => {
+                const text = reader.result;
+                if (typeof text !== 'string') return;
                 await processAiRequest(`File Content:\n${text}`);
             }
             reader.readAsText(file);

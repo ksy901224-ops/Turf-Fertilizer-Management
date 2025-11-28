@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { GoogleGenAI } from '@google/genai';
@@ -641,8 +642,9 @@ export default function TurfFertilizerApp() {
   // Aggregate Product Quantity Data
   const aggregatedProductQuantity = useMemo(() => {
     const data: Record<string, { totalAmount: number, unit: string, cost: number }> = {};
+    let filtered = filteredLogForAnalysis; // use declared variable
     
-    filteredLogForAnalysis.forEach(entry => {
+    filtered.forEach(entry => {
         // Find product to check if liquid
         const product = fertilizers.find(f => f.name === entry.product);
         const isLiquid = product?.type === '액상' || entry.applicationUnit.includes('ml');
@@ -1968,7 +1970,9 @@ export default function TurfFertilizerApp() {
                                     <span className="text-slate-700 font-medium truncate flex-1">{name}</span>
                                     <div className="text-right">
                                         <span className="font-bold text-slate-900">{data.totalAmount.toFixed(1)} {data.unit}</span>
-                                        <div className="text-[10px] text-slate-400">{Math.round(data.cost).toLocaleString()}원</div>
+                                        <div className="text-right">
+                                            <span className="text-[10px] text-slate-400">{Math.round(data.cost).toLocaleString()}원</span>
+                                        </div>
                                     </div>
                                 </div>
                             )) : (
@@ -2006,7 +2010,7 @@ export default function TurfFertilizerApp() {
             {/* --- NEW CHART VISUALIZATION (Consolidated N/P/K) --- */}
             <div className="mb-8">
                 <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-bold text-slate-700 text-lg">{isCumulative ? '누적' : '월별'} 통합 순성분(Nutrient) 투입 현황</h3>
+                    <h3 className="font-bold text-slate-700 text-lg">{isCumulative ? '📈 누적' : '📊 월별'} 통합 순성분 투입 현황 (1㎡당)</h3>
                     <div className="flex bg-slate-100 rounded-lg p-1">
                         <button 
                             onClick={() => setIsCumulative(false)}
@@ -2041,9 +2045,9 @@ export default function TurfFertilizerApp() {
                                 {/* Guides (Lines) - Only show if specific category is selected */}
                                 {analysisCategory !== 'all' && (
                                     <>
-                                        <Line type="monotone" dataKey="guideN" name="권장 N" stroke="#15803d" strokeWidth={3} strokeDasharray="5 5" dot={{r: 4}} />
-                                        <Line type="monotone" dataKey="guideP" name="권장 P" stroke="#1d4ed8" strokeWidth={3} strokeDasharray="5 5" dot={{r: 4}} />
-                                        <Line type="monotone" dataKey="guideK" name="권장 K" stroke="#c2410c" strokeWidth={3} strokeDasharray="5 5" dot={{r: 4}} />
+                                        <Line type="monotone" dataKey="guideN" name={isCumulative ? "누적 권장 N" : "권장 N"} stroke="#15803d" strokeWidth={3} strokeDasharray="5 5" dot={{r: 4}} />
+                                        <Line type="monotone" dataKey="guideP" name={isCumulative ? "누적 권장 P" : "권장 P"} stroke="#1d4ed8" strokeWidth={3} strokeDasharray="5 5" dot={{r: 4}} />
+                                        <Line type="monotone" dataKey="guideK" name={isCumulative ? "누적 권장 K" : "권장 K"} stroke="#c2410c" strokeWidth={3} strokeDasharray="5 5" dot={{r: 4}} />
                                     </>
                                 )}
                             </ComposedChart>
@@ -2053,10 +2057,10 @@ export default function TurfFertilizerApp() {
                 </div>
             </div>
             
-            {/* Previous Table View (Kept for detailed data) */}
+            {/* Detailed Data Table */}
             <details className="group border rounded-lg">
                 <summary className="p-4 cursor-pointer font-semibold text-slate-600 bg-slate-50 flex items-center justify-between">
-                    <span>📋 상세 데이터 표 보기 ({isCumulative ? '누적' : '월별'})</span>
+                    <span>📋 상세 데이터 표 보기 ({isCumulative ? '누적' : '월별'}) - 1㎡당 기준</span>
                     <span className="transition-transform group-open:rotate-180"><ChevronDownIcon /></span>
                 </summary>
                 <div className="p-4 overflow-x-auto animate-fadeIn">
@@ -2079,15 +2083,15 @@ export default function TurfFertilizerApp() {
                                         <td className="p-2 border sticky left-0 bg-white font-medium">{data.month}</td>
                                         <td className="p-2 border bg-green-50/30">
                                             <div>{data.N > 0 ? data.N.toFixed(2) : '-'}</div>
-                                            {analysisCategory !== 'all' && <div className="text-[10px] text-slate-400">목표: {data.guideN}</div>}
+                                            {analysisCategory !== 'all' && <div className="text-[10px] text-slate-400">목표: {data.guideN.toFixed(2)}</div>}
                                         </td>
                                         <td className="p-2 border bg-blue-50/30">
                                             <div>{data.P > 0 ? data.P.toFixed(2) : '-'}</div>
-                                            {analysisCategory !== 'all' && <div className="text-[10px] text-slate-400">목표: {data.guideP}</div>}
+                                            {analysisCategory !== 'all' && <div className="text-[10px] text-slate-400">목표: {data.guideP.toFixed(2)}</div>}
                                         </td>
                                         <td className="p-2 border bg-orange-50/30">
                                             <div>{data.K > 0 ? data.K.toFixed(2) : '-'}</div>
-                                            {analysisCategory !== 'all' && <div className="text-[10px] text-slate-400">목표: {data.guideK}</div>}
+                                            {analysisCategory !== 'all' && <div className="text-[10px] text-slate-400">목표: {data.guideK.toFixed(2)}</div>}
                                         </td>
                                         <td className="p-2 border bg-slate-50 font-semibold text-slate-800">
                                             {monthlyTotal > 0 ? monthlyTotal.toFixed(2) : '-'}
@@ -2096,7 +2100,7 @@ export default function TurfFertilizerApp() {
                                 );
                             })}
                             <tr className="bg-slate-100 font-bold border-t-2 border-slate-300">
-                                <td className="p-2 sticky left-0 bg-slate-100">총계 (g/㎡)</td>
+                                <td className="p-2 sticky left-0 bg-slate-100">{isCumulative ? '최종 누적 (12월)' : '연간 총계'} (g/㎡)</td>
                                 <td className="p-2 text-green-800">
                                     {finalAnalysisData.length > 0 ? finalAnalysisData[finalAnalysisData.length-1].N.toFixed(2) : '0.00'}
                                 </td>
