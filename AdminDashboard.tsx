@@ -531,7 +531,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         setIsAiFillLoading(true);
         setAiError(null);
         try {
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
             const prompt = `
                 Analyze the provided fertilizer information (Text, Image, Excel, PDF, or CSV).
                 Extract the following details and return ONLY a JSON object:
@@ -554,8 +554,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 Important Rules:
                 1. If 'usage' is unknown or ambiguous, infer it from the context (e.g., 'fine turf' implies '그린', 'sports field' implies '페어웨이'). If completely unknown, default to '그린'.
                 2. If 'type' is unknown, infer it. 'Soil conditioner' -> '토양개량제', 'Functional' -> '기능성제제'. Default to '완효성'.
-                3. Ensure all nutrient values are numbers (percentages). If not found, use 0.
-                4. Extract amino acid percentage if mentioned (e.g., "Amino Acid 10%" -> 10).
+                3. Extract amino acid percentage if mentioned (e.g., "Amino Acid 10%" -> 10).
+                4. Ensure all nutrient values are numbers (percentages). If not found, use 0.
                 5. Do NOT include any markdown formatting or explanations. Just the raw JSON.
                 
                 Input Data:
@@ -608,20 +608,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
 
         if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.name.endsWith('.csv')) {
             const reader = new FileReader();
-            reader.onload = async () => {
-                const bstr = reader.result;
-                if (typeof bstr !== 'string') return;
-                const wb = XLSX.read(bstr, { type: 'binary' });
+            reader.onload = async (event) => {
+                const data = (event.target as FileReader).result;
+                if (!data || typeof data === 'string') return; // Expecting ArrayBuffer for 'array' type read
+                
+                const wb = XLSX.read(data, { type: 'array' });
                 const wsname = wb.SheetNames[0];
                 const ws = wb.Sheets[wsname];
                 const csvData = XLSX.utils.sheet_to_csv(ws);
-                await processAiRequest(`Extracted Spreadsheet Data:\n${csvData}`);
+                await processAiRequest(`Extracted Spreadsheet Data:\n${String(csvData)}`);
             };
-            reader.readAsBinaryString(file);
+            reader.readAsArrayBuffer(file);
         } else if (file.type.startsWith('image/') || file.type === 'application/pdf') {
             const reader = new FileReader();
-            reader.onloadend = async () => {
-                const result = reader.result;
+            reader.onloadend = async (event) => {
+                const result = (event.target as FileReader).result;
                 if (typeof result !== 'string') return;
                 
                 const base64Data = result.split(',')[1];
@@ -638,10 +639,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         } else {
              // Treat as text file
             const reader = new FileReader();
-            reader.onload = async () => {
-                const text = reader.result;
+            reader.onload = async (event) => {
+                const text = (event.target as FileReader).result;
                 if (typeof text !== 'string') return;
-                await processAiRequest(`File Content:\n${text}`);
+                await processAiRequest(`File Content:\n${String(text)}`);
             }
             reader.readAsText(file);
         }

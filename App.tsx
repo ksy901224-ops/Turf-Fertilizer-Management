@@ -544,17 +544,6 @@ export default function TurfFertilizerApp() {
         setCalculatorResults(null);
     }
   }, [calculatorProduct]);
-  
-  // Real-time nutrient preview for log input
-  const nutrientPreview = useMemo(() => {
-      if (!selectedProduct || !applicationRate) return null;
-      const rate = parseFloat(applicationRate);
-      if (isNaN(rate) || rate <= 0) return null;
-      
-      // Calculate per 1 m²
-      const { nutrients } = getApplicationDetails(selectedProduct, 1, rate);
-      return nutrients;
-  }, [selectedProduct, applicationRate]);
 
   const handleAddLog = () => {
     if (!selectedProduct) { alert('선택 필요: 비료를 선택하세요.'); return; }
@@ -611,6 +600,14 @@ export default function TurfFertilizerApp() {
         const area = parseFloat(areaStr) || 0;
         return getApplicationDetails(selectedProduct, area, parsedApplicationRate).totalCost;
     }, [selectedProduct, activeLogTab, logGreenArea, logTeeArea, logFairwayArea, applicationRate]);
+
+    const nutrientPreview = useMemo(() => {
+        if (!selectedProduct || !applicationRate) return null;
+        const rate = parseFloat(applicationRate);
+        if (isNaN(rate) || rate <= 0) return null;
+        
+        return getApplicationDetails(selectedProduct, 1, rate).nutrients; // per 1m^2
+    }, [selectedProduct, applicationRate]);
 
   // Group Fertilizers for Select
   const groupedFertilizers = useMemo(() => {
@@ -2010,7 +2007,7 @@ export default function TurfFertilizerApp() {
             {/* --- NEW CHART VISUALIZATION (Consolidated N/P/K) --- */}
             <div className="mb-8">
                 <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-bold text-slate-700 text-lg">{isCumulative ? '📈 누적' : '📊 월별'} 통합 순성분 투입 현황 (1㎡당)</h3>
+                    <h3 className="font-bold text-slate-700 text-lg">{isCumulative ? '📈 1㎡당 누적 순성분 투입 현황' : '📊 1㎡당 월별 순성분 투입 현황'}</h3>
                     <div className="flex bg-slate-100 rounded-lg p-1">
                         <button 
                             onClick={() => setIsCumulative(false)}
