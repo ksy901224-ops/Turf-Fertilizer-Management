@@ -573,6 +573,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             });
 
             let text = response.text;
+            if (!text) {
+                throw new Error("AI response text is empty or invalid.");
+            }
             // Clean up code blocks if present
             text = text.replace(/```json/g, '').replace(/```/g, '').trim();
             const data = JSON.parse(text);
@@ -606,7 +609,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.name.endsWith('.csv')) {
             const reader = new FileReader();
             reader.onload = async (evt) => {
-                const bstr = evt.target?.result;
+                const target = evt.target as FileReader;
+                const bstr = target.result as string;
+                if (!bstr) return;
                 const wb = XLSX.read(bstr, { type: 'binary' });
                 const wsname = wb.SheetNames[0];
                 const ws = wb.Sheets[wsname];
@@ -616,8 +621,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             reader.readAsBinaryString(file);
         } else if (file.type.startsWith('image/') || file.type === 'application/pdf') {
             const reader = new FileReader();
-            reader.onloadend = async () => {
-                const base64Data = (reader.result as string).split(',')[1];
+            reader.onloadend = async (evt) => {
+                const target = evt.target as FileReader;
+                const result = target.result as string;
+                if (!result) return;
+                const base64Data = result.split(',')[1];
                 const mimeType = file.type;
                 
                 await processAiRequest("Analyze this document/image.", [{
@@ -632,7 +640,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
              // Treat as text file
             const reader = new FileReader();
             reader.onload = async (evt) => {
-                const text = evt.target?.result as string;
+                const target = evt.target as FileReader;
+                const text = target.result as string;
+                if (!text) return;
                 await processAiRequest(`File Content:\n${text}`);
             }
             reader.readAsText(file);

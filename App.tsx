@@ -365,6 +365,9 @@ export default function TurfFertilizerApp() {
   const [visibleNutrients, setVisibleNutrients] = useState({ N: true, P: true, K: true });
   const [analysisCategory, setAnalysisCategory] = useState<'all' | '그린' | '티' | '페어웨이'>('all');
   const [analysisFairwayType, setAnalysisFairwayType] = useState<'KBG' | 'Zoysia'>('KBG');
+  
+  // NEW: Cumulative View Toggle State
+  const [isCumulative, setIsCumulative] = useState(false);
 
   const [aiResponse, setAiResponse] = useState('');
   const [isLoadingAI, setIsLoadingAI] = useState(false);
@@ -833,6 +836,33 @@ export default function TurfFertilizerApp() {
         return Object.values(data).sort((a, b) => a.month.localeCompare(b.month));
     }, [filteredLogForAnalysis, analysisCategory, analysisFairwayType, greenArea, teeArea, fairwayArea, manualPlanMode, manualTargets]);
     
+    // NEW: Final Data for Chart/Table (Handles Cumulative toggle)
+    const finalAnalysisData = useMemo(() => {
+        if (!isCumulative) return monthlyNutrientChartData;
+        
+        let cumN = 0, cumP = 0, cumK = 0;
+        let cumGuideN = 0, cumGuideP = 0, cumGuideK = 0;
+        
+        return monthlyNutrientChartData.map(item => {
+            cumN += item.N;
+            cumP += item.P;
+            cumK += item.K;
+            cumGuideN += item.guideN;
+            cumGuideP += item.guideP;
+            cumGuideK += item.guideK;
+            
+            return {
+                ...item,
+                N: Number(cumN.toFixed(2)),
+                P: Number(cumP.toFixed(2)),
+                K: Number(cumK.toFixed(2)),
+                guideN: Number(cumGuideN.toFixed(2)),
+                guideP: Number(cumGuideP.toFixed(2)),
+                guideK: Number(cumGuideK.toFixed(2)),
+            };
+        });
+    }, [monthlyNutrientChartData, isCumulative]);
+
     // New useMemo for Manual Plan Chart
     const manualPlanComparisonData = useMemo(() => {
         let guideKey = selectedGuide;
@@ -1212,7 +1242,7 @@ export default function TurfFertilizerApp() {
                   </div>
                   <div className="border-t my-2 border-slate-200"></div>
                   <p className="font-bold text-slate-800 flex justify-between gap-4">
-                      <span>총 투입량 (순성분):</span>
+                      <span>{isCumulative ? '누적' : '총'} 투입량 (순성분):</span>
                       <span>{total.toFixed(2)} g/㎡</span>
                   </p>
               </div>
@@ -1976,16 +2006,30 @@ export default function TurfFertilizerApp() {
             {/* --- NEW CHART VISUALIZATION (Consolidated N/P/K) --- */}
             <div className="mb-8">
                 <div className="flex justify-between items-center mb-4">
-                    <h3 className="font-bold text-slate-700 text-lg">월별 통합 순성분(Nutrient) 투입 현황</h3>
+                    <h3 className="font-bold text-slate-700 text-lg">{isCumulative ? '누적' : '월별'} 통합 순성분(Nutrient) 투입 현황</h3>
+                    <div className="flex bg-slate-100 rounded-lg p-1">
+                        <button 
+                            onClick={() => setIsCumulative(false)}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${!isCumulative ? 'bg-white shadow text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            월별 보기
+                        </button>
+                        <button 
+                            onClick={() => setIsCumulative(true)}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${isCumulative ? 'bg-white shadow text-purple-600' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            누적 보기
+                        </button>
+                    </div>
                 </div>
 
                 <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
                     <div className="h-80">
                         <ResponsiveContainer width="100%" height="100%">
-                            <ComposedChart data={monthlyNutrientChartData} margin={{top: 10, right: 10, left: 0, bottom: 0}}>
+                            <ComposedChart data={finalAnalysisData} margin={{top: 10, right: 10, left: 0, bottom: 0}}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                                 <XAxis dataKey="month" fontSize={12} tickFormatter={(val) => `${parseInt(val.split('-')[1])}월`} />
-                                <YAxis fontSize={12} label={{ value: '순성분 투입량 (g/㎡)', angle: -90, position: 'insideLeft' }} />
+                                <YAxis fontSize={12} label={{ value: isCumulative ? '누적 투입량 (g/㎡)' : '순성분 투입량 (g/㎡)', angle: -90, position: 'insideLeft' }} />
                                 <Tooltip content={<CustomChartTooltip />} cursor={{fill: 'rgba(0,0,0,0.05)'}} />
                                 <Legend wrapperStyle={{fontSize: '12px'}} />
                                 
@@ -2012,7 +2056,7 @@ export default function TurfFertilizerApp() {
             {/* Previous Table View (Kept for detailed data) */}
             <details className="group border rounded-lg">
                 <summary className="p-4 cursor-pointer font-semibold text-slate-600 bg-slate-50 flex items-center justify-between">
-                    <span>📋 상세 데이터 표 보기</span>
+                    <span>📋 상세 데이터 표 보기 ({isCumulative ? '누적' : '월별'})</span>
                     <span className="transition-transform group-open:rotate-180"><ChevronDownIcon /></span>
                 </summary>
                 <div className="p-4 overflow-x-auto animate-fadeIn">
@@ -2027,7 +2071,7 @@ export default function TurfFertilizerApp() {
                             </tr>
                         </thead>
                         <tbody>
-                            {monthlyNutrientChartData.map((data) => {
+                            {finalAnalysisData.map((data) => {
                                 const isZero = data.N === 0 && data.P === 0 && data.K === 0;
                                 const monthlyTotal = data.N + data.P + data.K;
                                 return (
@@ -2054,16 +2098,18 @@ export default function TurfFertilizerApp() {
                             <tr className="bg-slate-100 font-bold border-t-2 border-slate-300">
                                 <td className="p-2 sticky left-0 bg-slate-100">총계 (g/㎡)</td>
                                 <td className="p-2 text-green-800">
-                                    {monthlyNutrientChartData.reduce((sum, item) => sum + item.N, 0).toFixed(2)}
+                                    {finalAnalysisData.length > 0 ? finalAnalysisData[finalAnalysisData.length-1].N.toFixed(2) : '0.00'}
                                 </td>
                                 <td className="p-2 text-blue-800">
-                                    {monthlyNutrientChartData.reduce((sum, item) => sum + item.P, 0).toFixed(2)}
+                                    {finalAnalysisData.length > 0 ? finalAnalysisData[finalAnalysisData.length-1].P.toFixed(2) : '0.00'}
                                 </td>
                                 <td className="p-2 text-orange-800">
-                                    {monthlyNutrientChartData.reduce((sum, item) => sum + item.K, 0).toFixed(2)}
+                                    {finalAnalysisData.length > 0 ? finalAnalysisData[finalAnalysisData.length-1].K.toFixed(2) : '0.00'}
                                 </td>
                                 <td className="p-2 text-slate-900 bg-slate-200">
-                                    {monthlyNutrientChartData.reduce((sum, item) => sum + item.N + item.P + item.K, 0).toFixed(2)}
+                                    {finalAnalysisData.length > 0 
+                                        ? (finalAnalysisData[finalAnalysisData.length-1].N + finalAnalysisData[finalAnalysisData.length-1].P + finalAnalysisData[finalAnalysisData.length-1].K).toFixed(2) 
+                                        : '0.00'}
                                 </td>
                             </tr>
                         </tbody>
