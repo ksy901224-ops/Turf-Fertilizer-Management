@@ -763,13 +763,7 @@ export default function TurfFertilizerApp() {
              else if (analysisCategory === '페어웨이') guideKey = analysisFairwayType === 'KBG' ? '한지형잔디 (켄터키블루그라스)' : '난지형잔디 (한국잔디)';
         }
         
-        // 2. Determine Area
-        let areaDivisor = 1;
-        if (analysisCategory === '그린') areaDivisor = parseFloat(greenArea) || 0;
-        else if (analysisCategory === '티') areaDivisor = parseFloat(teeArea) || 0;
-        else if (analysisCategory === '페어웨이') areaDivisor = parseFloat(fairwayArea) || 0;
-        
-        // 3. Initialize Months (1-12)
+        // 2. Initialize Months (1-12)
         for(let i=0; i<12; i++) {
             const currentYear = new Date().getFullYear(); // Use current year for display context
             const monthKey = `${currentYear}-${String(i + 1).padStart(2, '0')}`;
@@ -800,30 +794,43 @@ export default function TurfFertilizerApp() {
             };
         }
 
-        // 4. Aggregate Actual Data
+        // 3. Aggregate Actual Data using exact application rate (g/m2)
+        // CRITICAL UPDATE: Calculate based on applicationRate * nutrient% directly
+        // This avoids distortion from Area division
         filteredLogForAnalysis.forEach(entry => {
             const date = new Date(entry.date);
             if (date.getFullYear() === new Date().getFullYear()) {
                 const monthIndex = date.getMonth();
                 const monthKey = `${date.getFullYear()}-${String(monthIndex + 1).padStart(2, '0')}`;
                 
-                if (data[monthKey]) {
-                     // Add TOTAL grams first
-                    data[monthKey].N += entry.nutrients.N || 0;
-                    data[monthKey].P += entry.nutrients.P || 0;
-                    data[monthKey].K += entry.nutrients.K || 0;
+                // Find product definition to get percentages
+                const product = fertilizers.find(f => f.name === entry.product);
+                
+                if (data[monthKey] && product) {
+                    // Application Rate is already g/m2 (or ml/m2)
+                    // If ml/m2, we should ideally use density, but simpler to assume rate enters formulation
+                    
+                    // NPK Contribution = Rate (g/m2) * (Percent / 100)
+                    // For Liquid: Rate(ml/m2) * Density * (Percent/100)
+                    // We use getApplicationDetails logic for consistency, but scaled to 1m2
+                    
+                    // We can reuse getApplicationDetails(product, 1, entry.applicationRate)
+                    // But to be super fast and consistent with log input:
+                    const nutrientsPerM2 = getApplicationDetails(product, 1, entry.applicationRate).nutrients;
+
+                    data[monthKey].N += nutrientsPerM2.N || 0;
+                    data[monthKey].P += nutrientsPerM2.P || 0;
+                    data[monthKey].K += nutrientsPerM2.K || 0;
                 }
             }
         });
         
-        // Convert Actuals to g/m2
-        if (areaDivisor > 0) {
-            Object.values(data).forEach(item => {
-                item.N = parseFloat((item.N / areaDivisor).toFixed(2));
-                item.P = parseFloat((item.P / areaDivisor).toFixed(2));
-                item.K = parseFloat((item.K / areaDivisor).toFixed(2));
-            });
-        }
+        // Round final values
+        Object.values(data).forEach(item => {
+            item.N = parseFloat(item.N.toFixed(2));
+            item.P = parseFloat(item.P.toFixed(2));
+            item.K = parseFloat(item.K.toFixed(2));
+        });
         
         // If 'all' is selected, we don't show guide because it's mixed
         if (analysisCategory === 'all') {
@@ -833,7 +840,7 @@ export default function TurfFertilizerApp() {
         }
         
         return Object.values(data).sort((a, b) => a.month.localeCompare(b.month));
-    }, [filteredLogForAnalysis, analysisCategory, analysisFairwayType, greenArea, teeArea, fairwayArea, manualPlanMode, manualTargets]);
+    }, [filteredLogForAnalysis, analysisCategory, analysisFairwayType, greenArea, teeArea, fairwayArea, manualPlanMode, manualTargets, fertilizers]);
     
     // NEW: Final Data for Chart/Table (Handles Cumulative toggle)
     const finalAnalysisData = useMemo(() => {
@@ -2030,7 +2037,7 @@ export default function TurfFertilizerApp() {
                             <ComposedChart data={finalAnalysisData} margin={{top: 10, right: 10, left: 0, bottom: 0}}>
                                 <CartesianGrid strokeDasharray="3 3" vertical={false} />
                                 <XAxis dataKey="month" fontSize={12} tickFormatter={(val) => `${parseInt(val.split('-')[1])}월`} />
-                                <YAxis fontSize={12} label={{ value: isCumulative ? '누적 투입량 (g/㎡)' : '순성분 투입량 (g/㎡)', angle: -90, position: 'insideLeft' }} />
+                                <YAxis fontSize={12} label={{ value: isCumulative ? '1㎡당 누적량 (g/㎡)' : '1㎡당 투입량 (g/㎡)', angle: -90, position: 'insideLeft' }} />
                                 <Tooltip content={<CustomChartTooltip />} cursor={{fill: 'rgba(0,0,0,0.05)'}} />
                                 <Legend wrapperStyle={{fontSize: '12px'}} />
                                 

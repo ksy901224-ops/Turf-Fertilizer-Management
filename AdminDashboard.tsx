@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import * as api from './api';
 import * as XLSX from 'xlsx';
@@ -609,20 +608,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.name.endsWith('.csv')) {
             const reader = new FileReader();
             reader.onload = async (event) => {
-                const data = (event.target as FileReader).result;
+                const target = event.target as FileReader;
+                const data = target.result;
                 if (!data || typeof data === 'string') return; // Expecting ArrayBuffer for 'array' type read
                 
                 const wb = XLSX.read(data, { type: 'array' });
                 const wsname = wb.SheetNames[0];
                 const ws = wb.Sheets[wsname];
-                const csvData = XLSX.utils.sheet_to_csv(ws);
+                const csvData = XLSX.utils.sheet_to_csv(ws) as any;
                 await processAiRequest(`Extracted Spreadsheet Data:\n${String(csvData)}`);
             };
             reader.readAsArrayBuffer(file);
         } else if (file.type.startsWith('image/') || file.type === 'application/pdf') {
             const reader = new FileReader();
             reader.onloadend = async (event) => {
-                const result = (event.target as FileReader).result;
+                const target = event.target as FileReader;
+                const result = target.result;
                 if (typeof result !== 'string') return;
                 
                 const base64Data = result.split(',')[1];
@@ -640,9 +641,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
              // Treat as text file
             const reader = new FileReader();
             reader.onload = async (event) => {
-                const text = (event.target as FileReader).result;
+                const target = event.target as FileReader;
+                const text = target.result;
                 if (typeof text !== 'string') return;
-                await processAiRequest(`File Content:\n${String(text)}`);
+                await processAiRequest(`File Content:\n${text}`);
             }
             reader.readAsText(file);
         }
