@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import * as api from './api';
 import * as XLSX from 'xlsx';
@@ -531,7 +530,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         setIsAiFillLoading(true);
         setAiError(null);
         try {
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+            const ai = new GoogleGenAI({ apiKey: (process.env.API_KEY as string) });
             const prompt = `
                 Analyze the provided fertilizer information (Text, Image, Excel, PDF, or CSV).
                 Extract the following details and return ONLY a JSON object:
@@ -608,22 +607,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
 
         if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.name.endsWith('.csv')) {
             const reader = new FileReader();
-            reader.onload = async (event) => {
-                const target = event.target as FileReader;
+            reader.onload = async (event: any) => {
+                const target = event.target;
+                if (!target) return;
                 const data = target.result;
                 if (!data || typeof data === 'string') return; // Expecting ArrayBuffer for 'array' type read
                 
                 const wb = XLSX.read(data, { type: 'array' });
                 const wsname = wb.SheetNames[0];
+                if (!wsname) return;
                 const ws = wb.Sheets[wsname];
-                const csvData = XLSX.utils.sheet_to_csv(ws) as any;
-                await processAiRequest(`Extracted Spreadsheet Data:\n${String(csvData)}`);
+                const csvData = XLSX.utils.sheet_to_csv(ws);
+                await processAiRequest(`Extracted Spreadsheet Data:\n${csvData}`);
             };
             reader.readAsArrayBuffer(file);
         } else if (file.type.startsWith('image/') || file.type === 'application/pdf') {
             const reader = new FileReader();
-            reader.onloadend = async (event) => {
-                const target = event.target as FileReader;
+            reader.onloadend = async (event: any) => {
+                const target = event.target;
+                if (!target) return;
                 const result = target.result;
                 if (typeof result !== 'string') return;
                 
@@ -641,8 +643,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         } else {
              // Treat as text file
             const reader = new FileReader();
-            reader.onload = async (event) => {
-                const target = event.target as FileReader;
+            reader.onload = async (event: any) => {
+                const target = event.target;
+                if (!target) return;
                 const text = target.result;
                 if (typeof text !== 'string') return;
                 await processAiRequest(`File Content:\n${text}`);
