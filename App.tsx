@@ -3,7 +3,7 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import * as XLSX from 'xlsx';
 import { GoogleGenAI } from '@google/genai';
 import { Fertilizer, LogEntry, NewFertilizerForm, NutrientLog, User } from './types';
-import { NUTRIENTS, FERTILIZER_GUIDE, USAGE_CATEGORIES, TYPE_CATEGORIES, MONTHLY_DISTRIBUTION, FERTILIZER_TYPE_GROUPS } from './constants';
+import { NUTRIENTS, FERTILIZER_GUIDE, USAGE_CATEGORIES, TYPE_CATEGORIES, MONTHLY_DISTRIBUTION } from './constants';
 import * as api from './api';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, ComposedChart } from 'recharts';
 import { Chatbot } from './Chatbot';
@@ -317,357 +317,6 @@ const FertilizerDetailModal: React.FC<FertilizerDetailModalProps> = ({ fertilize
     );
 };
 
-// --- Fertilizer Editor Modal (For Adding Custom Fertilizers) ---
-interface FertilizerEditorModalProps {
-    onClose: () => void;
-    onSave: (fertilizer: Fertilizer) => void;
-}
-
-const FertilizerEditorModal: React.FC<FertilizerEditorModalProps> = ({ onClose, onSave }) => {
-    const [newFertilizer, setNewFertilizer] = useState<Partial<Fertilizer>>({
-        type: '완효성',
-        usage: '그린',
-        N: 0, P: 0, K: 0, Ca: 0, Mg: 0, S: 0, Fe: 0, Mn: 0, Zn: 0, Cu: 0, B: 0, Mo: 0,
-        Cl: 0, Na: 0, Si: 0, Ni: 0, Co: 0, V: 0, aminoAcid: 0
-    });
-    const [aiInputText, setAiInputText] = useState('');
-    const [isAiFillLoading, setIsAiFillLoading] = useState(false);
-    const [aiSmartTab, setAiSmartTab] = useState<'text' | 'file'>('text');
-    const [aiError, setAiError] = useState<string | null>(null);
-
-    const processAiRequest = async (promptText: string, inlineDataParts: any[] = []) => {
-        setIsAiFillLoading(true);
-        setAiError(null);
-        try {
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
-            const prompt = `
-                Analyze the provided fertilizer information (Text, Image, Excel, PDF, or CSV).
-                Extract the following details and return ONLY a JSON object:
-                {
-                    "name": "Product Name",
-                    "usage": "One of ['그린', '티', '페어웨이']",
-                    "type": "One of ['완효성', '액상', '수용성', '4종복합비료', '기능성제제', '토양개량제', ...]",
-                    "unit": "Packaging Unit (e.g., '20kg')",
-                    "price": Number (approximate or 0 if unknown),
-                    "rate": "Recommended Rate (e.g., '20g/㎡')",
-                    "N": Number (Percentage),
-                    "P": Number (Percentage),
-                    "K": Number (Percentage),
-                    "Ca": Number, "Mg": Number, "S": Number, "Fe": Number, "Mn": Number, 
-                    "Zn": Number, "Cu": Number, "B": Number, "Mo": Number, 
-                    "Cl": Number, "Na": Number, "Si": Number, "Ni": Number, "Co": Number, "V": Number,
-                    "aminoAcid": Number (Percentage of Amino Acids if present)
-                }
-                
-                Important Rules:
-                1. If 'usage' is unknown or ambiguous, infer it from the context (e.g., 'fine turf' implies '그린', 'sports field' implies '페어웨이'). If completely unknown, default to '그린'.
-                2. If 'type' is unknown, infer it. 'Soil conditioner' -> '토양개량제', 'Functional' -> '기능성제제'. Default to '완효성'.
-                3. Extract amino acid percentage if mentioned (e.g., "Amino Acid 10%" -> 10).
-                4. Ensure all nutrient values are numbers (percentages). If not found, use 0.
-                5. Do NOT include any markdown formatting or explanations. Just the raw JSON.
-                
-                Input Data:
-                ${promptText}
-            `;
-
-            const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: {
-                    parts: [
-                        { text: prompt },
-                        ...inlineDataParts
-                    ]
-                }
-            });
-
-            let text = response.text;
-            if (!text) throw new Error("AI response text is empty.");
-            text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-            const data = JSON.parse(text);
-
-            setNewFertilizer(prev => ({
-                ...prev,
-                ...data,
-                // Ensure usage is valid
-                usage: ['그린', '티', '페어웨이'].includes(data.usage) ? data.usage : '그린',
-                // Keep inferred type or default
-                type: data.type || '완효성',
-            }));
-            
-            if (inlineDataParts.length > 0 && inlineDataParts[0].inlineData.mimeType.startsWith('image/')) {
-                 const base64 = inlineDataParts[0].inlineData.data;
-                 const mime = inlineDataParts[0].inlineData.mimeType;
-                 setNewFertilizer(prev => ({ ...prev, imageUrl: `data:${mime};base64,${base64}` }));
-            }
-
-        } catch (e) {
-            console.error("AI Fill Error:", e);
-            setAiError("분석에 실패했습니다. 올바른 데이터인지 확인해주세요.");
-        } finally {
-            setIsAiFillLoading(false);
-        }
-    };
-
-    const handleAiSmartFillText = async () => {
-        if (!aiInputText.trim()) return;
-        await processAiRequest(aiInputText);
-    };
-
-    const handleAiSmartFillFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.name.endsWith('.csv')) {
-            const reader = new FileReader();
-            reader.onload = async (event: ProgressEvent<FileReader>) => {
-                const target = event.target as FileReader;
-                if (!target) return;
-                const data = target.result;
-                if (!data || typeof data === 'string') return;
-                
-                const wb = XLSX.read(data, { type: 'array' });
-                const wsname = wb.SheetNames[0];
-                const ws = wb.Sheets[wsname];
-                const csvData = XLSX.utils.sheet_to_csv(ws);
-                await processAiRequest(`Extracted Spreadsheet Data:\n${csvData}`);
-            };
-            reader.readAsArrayBuffer(file);
-        } else if (file.type.startsWith('image/') || file.type === 'application/pdf') {
-            const reader = new FileReader();
-            reader.onloadend = async (event: ProgressEvent<FileReader>) => {
-                const target = event.target as FileReader;
-                if (!target) return;
-                const result = target.result;
-                if (typeof result !== 'string') return;
-                
-                const base64Data = result.split(',')[1];
-                const mimeType = file.type;
-                
-                await processAiRequest("Analyze this document/image.", [{
-                    inlineData: {
-                        data: base64Data,
-                        mimeType: mimeType
-                    }
-                }]);
-            };
-            reader.readAsDataURL(file);
-        } else {
-             const reader = new FileReader();
-             reader.onload = async (event) => {
-                 if (event.target && typeof event.target.result === 'string') {
-                     await processAiRequest(`File Content:\n${event.target.result}`);
-                 }
-             };
-             reader.readAsText(file);
-        }
-    };
-
-    const handleSave = () => {
-        if (!newFertilizer.name || !newFertilizer.unit || !newFertilizer.rate) {
-            alert('필수 정보(제품명, 단위, 권장사용량)를 모두 입력해주세요.');
-            return;
-        }
-        
-        const fertilizerToAdd: Fertilizer = {
-            name: newFertilizer.name,
-            usage: newFertilizer.usage as '그린' | '티' | '페어웨이',
-            type: newFertilizer.type as string,
-            N: Number(newFertilizer.N || 0),
-            P: Number(newFertilizer.P || 0),
-            K: Number(newFertilizer.K || 0),
-            Ca: Number(newFertilizer.Ca || 0),
-            Mg: Number(newFertilizer.Mg || 0),
-            S: Number(newFertilizer.S || 0),
-            Fe: Number(newFertilizer.Fe || 0),
-            Mn: Number(newFertilizer.Mn || 0),
-            Zn: Number(newFertilizer.Zn || 0),
-            Cu: Number(newFertilizer.Cu || 0),
-            B: Number(newFertilizer.B || 0),
-            Mo: Number(newFertilizer.Mo || 0),
-            Cl: Number(newFertilizer.Cl || 0),
-            Na: Number(newFertilizer.Na || 0),
-            Si: Number(newFertilizer.Si || 0),
-            Ni: Number(newFertilizer.Ni || 0),
-            Co: Number(newFertilizer.Co || 0),
-            V: Number(newFertilizer.V || 0),
-            aminoAcid: Number(newFertilizer.aminoAcid || 0),
-            price: Number(newFertilizer.price || 0),
-            unit: newFertilizer.unit,
-            rate: newFertilizer.rate,
-            stock: Number(newFertilizer.stock || 0),
-            imageUrl: newFertilizer.imageUrl,
-            lowStockAlertEnabled: false,
-        };
-        onSave(fertilizerToAdd);
-    };
-
-    return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4" onClick={onClose}>
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
-                <div className="p-4 border-b flex justify-between items-center bg-slate-50">
-                    <h3 className="font-bold text-slate-800">새 비료 추가 (사용자 정의)</h3>
-                    <button onClick={onClose}><CloseIcon /></button>
-                </div>
-                
-                <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                    {/* AI Smart Input Section */}
-                    <div className="bg-purple-50 rounded-xl p-4 border border-purple-100">
-                        <h4 className="font-bold text-purple-900 flex items-center gap-2 mb-3 text-sm">
-                            <SparklesIcon /> AI 스마트 입력
-                        </h4>
-                        <div className="flex gap-2 mb-3">
-                            <button 
-                                onClick={() => setAiSmartTab('text')}
-                                className={`flex-1 py-2 text-xs font-bold rounded transition-colors ${aiSmartTab === 'text' ? 'bg-purple-600 text-white shadow' : 'bg-white text-purple-600 border border-purple-200'}`}
-                            >
-                                텍스트 직접 입력
-                            </button>
-                            <button 
-                                onClick={() => setAiSmartTab('file')}
-                                className={`flex-1 py-2 text-xs font-bold rounded transition-colors ${aiSmartTab === 'file' ? 'bg-purple-600 text-white shadow' : 'bg-white text-purple-600 border border-purple-200'}`}
-                            >
-                                파일 업로드 (이미지/엑셀/PDF)
-                            </button>
-                        </div>
-
-                        {aiSmartTab === 'text' ? (
-                            <div className="space-y-2">
-                                <textarea
-                                    value={aiInputText}
-                                    onChange={e => setAiInputText(e.target.value)}
-                                    placeholder="제품 설명, 성분표 등을 복사해서 붙여넣으세요..."
-                                    className="w-full p-2 border border-purple-200 rounded text-sm h-24 focus:ring-2 focus:ring-purple-400 focus:outline-none"
-                                />
-                                <button 
-                                    onClick={handleAiSmartFillText}
-                                    disabled={isAiFillLoading || !aiInputText.trim()}
-                                    className="w-full py-2 bg-purple-600 text-white font-bold rounded text-xs hover:bg-purple-700 transition-colors disabled:opacity-50 flex justify-center items-center gap-2"
-                                >
-                                    {isAiFillLoading ? <div className="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full"></div> : <SparklesIcon />}
-                                    분석하여 자동 채우기
-                                </button>
-                            </div>
-                        ) : (
-                            <div className="space-y-2">
-                                <div className="border-2 border-dashed border-purple-300 rounded-lg p-6 text-center bg-white hover:bg-purple-50 transition-colors relative">
-                                    <input 
-                                        type="file" 
-                                        onChange={handleAiSmartFillFile}
-                                        accept="image/*,.xlsx,.xls,.csv,.pdf"
-                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                        disabled={isAiFillLoading}
-                                    />
-                                    <div className="flex flex-col items-center justify-center pointer-events-none">
-                                        {isAiFillLoading ? (
-                                            <div className="animate-spin h-8 w-8 border-4 border-purple-500 border-t-transparent rounded-full mb-2"></div>
-                                        ) : (
-                                            <UploadIcon className="h-8 w-8 text-purple-400 mb-2" />
-                                        )}
-                                        <p className="text-xs font-bold text-purple-700">
-                                            {isAiFillLoading ? '파일 분석 중...' : '클릭 또는 드래그하여 파일 업로드'}
-                                        </p>
-                                        <p className="text-[10px] text-purple-400 mt-1">
-                                            지원: 이미지, Excel, PDF, CSV
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                        {aiError && (
-                            <p className="text-xs text-red-500 mt-2 text-center">{aiError}</p>
-                        )}
-                    </div>
-
-                    <div className="border-t pt-4">
-                        <h4 className="font-bold text-slate-700 mb-3 text-sm">상세 정보 입력</h4>
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-xs font-bold text-slate-600 mb-1">제품명</label>
-                                <input type="text" className="w-full border p-2 rounded" value={newFertilizer.name || ''} onChange={e => setNewFertilizer({...newFertilizer, name: e.target.value})} placeholder="예: My Custom Fertilizer" />
-                            </div>
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-600 mb-1">용도</label>
-                                    <select className="w-full border p-2 rounded" value={newFertilizer.usage} onChange={e => setNewFertilizer({...newFertilizer, usage: e.target.value as any})}>
-                                        <option value="그린">그린</option>
-                                        <option value="티">티</option>
-                                        <option value="페어웨이">페어웨이</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-600 mb-1">타입</label>
-                                    <select 
-                                        className="w-full border p-2 rounded" 
-                                        value={newFertilizer.type} 
-                                        onChange={e => setNewFertilizer({...newFertilizer, type: e.target.value})}
-                                    >
-                                        {Object.entries(FERTILIZER_TYPE_GROUPS).map(([groupName, types]) => (
-                                            <optgroup key={groupName} label={groupName}>
-                                                {types.map(t => (
-                                                    <option key={t} value={t}>{t}</option>
-                                                ))}
-                                            </optgroup>
-                                        ))}
-                                        <option value="완효성">완효성 (기타)</option>
-                                        <option value="액상">액상 (기타)</option>
-                                    </select>
-                                </div>
-                            </div>
-                            <div className="bg-slate-50 p-3 rounded border">
-                                <p className="text-xs font-bold text-slate-500 mb-2">성분 함량 (%)</p>
-                                <div className="grid grid-cols-3 gap-2 mb-2">
-                                    <div><label className="text-[10px]">N (질소)</label><input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.N} onChange={e => setNewFertilizer({...newFertilizer, N: Number(e.target.value)})} /></div>
-                                    <div><label className="text-[10px]">P (인산)</label><input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.P} onChange={e => setNewFertilizer({...newFertilizer, P: Number(e.target.value)})} /></div>
-                                    <div><label className="text-[10px]">K (칼륨)</label><input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.K} onChange={e => setNewFertilizer({...newFertilizer, K: Number(e.target.value)})} /></div>
-                                </div>
-                                <div className="grid grid-cols-4 gap-2">
-                                     <div><label className="text-[10px]">Ca</label><input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.Ca} onChange={e => setNewFertilizer({...newFertilizer, Ca: Number(e.target.value)})} /></div>
-                                     <div><label className="text-[10px]">Mg</label><input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.Mg} onChange={e => setNewFertilizer({...newFertilizer, Mg: Number(e.target.value)})} /></div>
-                                     <div><label className="text-[10px]">S</label><input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.S} onChange={e => setNewFertilizer({...newFertilizer, S: Number(e.target.value)})} /></div>
-                                     <div><label className="text-[10px]">Fe</label><input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.Fe} onChange={e => setNewFertilizer({...newFertilizer, Fe: Number(e.target.value)})} /></div>
-                                </div>
-                            </div>
-                            
-                            {/* Micronutrients and Others Section (NEW) */}
-                            <div className="bg-orange-50 p-3 rounded border border-orange-100">
-                                <p className="text-xs font-bold text-orange-800 mb-2">미량요소 및 기타 (%)</p>
-                                <div className="grid grid-cols-5 gap-2 mb-2">
-                                    <div><label className="text-[10px]">Mn</label><input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.Mn} onChange={e => setNewFertilizer({...newFertilizer, Mn: Number(e.target.value)})} /></div>
-                                    <div><label className="text-[10px]">Zn</label><input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.Zn} onChange={e => setNewFertilizer({...newFertilizer, Zn: Number(e.target.value)})} /></div>
-                                    <div><label className="text-[10px]">Cu</label><input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.Cu} onChange={e => setNewFertilizer({...newFertilizer, Cu: Number(e.target.value)})} /></div>
-                                    <div><label className="text-[10px]">B</label><input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.B} onChange={e => setNewFertilizer({...newFertilizer, B: Number(e.target.value)})} /></div>
-                                    <div><label className="text-[10px]">Mo</label><input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.Mo} onChange={e => setNewFertilizer({...newFertilizer, Mo: Number(e.target.value)})} /></div>
-                                </div>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <div>
-                                        <label className="text-[10px] font-bold text-slate-700">아미노산</label>
-                                        <input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.aminoAcid} onChange={e => setNewFertilizer({...newFertilizer, aminoAcid: Number(e.target.value)})} placeholder="%" />
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-600 mb-1">포장단위</label>
-                                    <input type="text" className="w-full border p-2 rounded" value={newFertilizer.unit || ''} onChange={e => setNewFertilizer({...newFertilizer, unit: e.target.value})} placeholder="예: 20kg" />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-600 mb-1">권장사용량</label>
-                                    <input type="text" className="w-full border p-2 rounded" value={newFertilizer.rate || ''} onChange={e => setNewFertilizer({...newFertilizer, rate: e.target.value})} placeholder="예: 20g/㎡" />
-                                </div>
-                            </div>
-                            
-                            <button onClick={handleSave} className="w-full bg-blue-600 text-white font-bold py-3 rounded hover:bg-blue-700 shadow-md">
-                                비료 추가하기
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-};
-
 export default function TurfFertilizerApp() {
   const [user, setUser] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -697,9 +346,6 @@ export default function TurfFertilizerApp() {
   const [selectedProduct, setSelectedProduct] = useState<Fertilizer | null>(null);
   const [detailModalFertilizer, setDetailModalFertilizer] = useState<Fertilizer | null>(null);
   
-  // Custom Fertilizer Modal State
-  const [isCustomFertilizerModalOpen, setIsCustomFertilizerModalOpen] = useState(false);
-
   // Fertilizer List Filter State
   const [activeFertilizerListTab, setActiveFertilizerListTab] = useState<'전체' | '그린' | '티' | '페어웨이'>('전체');
   
@@ -749,15 +395,6 @@ export default function TurfFertilizerApp() {
   const [filterProduct, setFilterProduct] = useState('');
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
-  
-  // nutrientPreview for log input
-  const nutrientPreview = useMemo(() => {
-        if (!selectedProduct || !applicationRate) return null;
-        const rate = parseFloat(applicationRate);
-        if (isNaN(rate) || rate <= 0) return null;
-        
-        return getApplicationDetails(selectedProduct, 1, rate).nutrients; // per 1m^2
-  }, [selectedProduct, applicationRate]);
 
   // Authentication Check Effect
   useEffect(() => {
@@ -878,15 +515,6 @@ export default function TurfFertilizerApp() {
         setFilterEndDate('');
     }
   };
-  
-  const handleSaveCustomFertilizer = async (newFert: Fertilizer) => {
-      if (!user) return;
-      const newList = [...userFertilizers, newFert];
-      await api.saveFertilizers(user, newList);
-      setUserFertilizers(newList);
-      setIsCustomFertilizerModalOpen(false);
-      alert('비료가 추가되었습니다.');
-  };
 
   // Fixed useEffect to prevent overwriting rate/date when selectedProduct changes due to user action
   useEffect(() => {
@@ -972,6 +600,14 @@ export default function TurfFertilizerApp() {
         const area = parseFloat(areaStr) || 0;
         return getApplicationDetails(selectedProduct, area, parsedApplicationRate).totalCost;
     }, [selectedProduct, activeLogTab, logGreenArea, logTeeArea, logFairwayArea, applicationRate]);
+
+    const nutrientPreview = useMemo(() => {
+        if (!selectedProduct || !applicationRate) return null;
+        const rate = parseFloat(applicationRate);
+        if (isNaN(rate) || rate <= 0) return null;
+        
+        return getApplicationDetails(selectedProduct, 1, rate).nutrients; // per 1m^2
+    }, [selectedProduct, applicationRate]);
 
   // Group Fertilizers for Select
   const groupedFertilizers = useMemo(() => {
@@ -1410,7 +1046,7 @@ export default function TurfFertilizerApp() {
       ${log.slice(0, 10).map(l => `- **${l.date} (${l.usage}):** ${l.product} (${l.area}㎡, ${l.applicationRate}${l.applicationUnit})`).join('\n')}
 
       ## 4. 사용 가능한 비료 목록
-      ${fertilizers.map(f => `- **${f.name}** (N-P-K: ${f.N}-{f.P}-{f.K}, 구분: ${f.usage})`).join('\n')}
+      ${fertilizers.map(f => `- **${f.name}** (N-P-K: ${f.N}-${f.P}-${f.K}, 구분: ${f.usage})`).join('\n')}
 
       ---
 
@@ -1893,16 +1529,10 @@ export default function TurfFertilizerApp() {
 
         {/* Fertilizer List Section */}
         <section className="bg-white p-6 rounded-lg shadow-md">
-            <div className="mb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div className="mb-4">
                 <h2 className="text-xl font-semibold text-slate-700 flex items-center gap-2">
                     🌱 보유 비료 목록
                 </h2>
-                <button 
-                    onClick={() => setIsCustomFertilizerModalOpen(true)}
-                    className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-xs font-bold rounded shadow hover:bg-indigo-700 transition-colors"
-                >
-                    <PlusIcon className="w-4 h-4" /> 내 비료 추가
-                </button>
             </div>
             
             <div className="flex gap-2 mb-4 overflow-x-auto pb-2 no-scrollbar">
@@ -2350,7 +1980,7 @@ export default function TurfFertilizerApp() {
                                     </div>
                                 </div>
                             )) : (
-                                <p className="text-xs text-slate-400 text-center py-2">데이터가 없습니다.</span>
+                                <p className="text-xs text-slate-400 text-center py-2">데이터가 없습니다.</p>
                             )}
                         </div>
                     </div>
@@ -2671,14 +2301,6 @@ export default function TurfFertilizerApp() {
         <FertilizerDetailModal 
             fertilizer={detailModalFertilizer} 
             onClose={() => setDetailModalFertilizer(null)} 
-        />
-      )}
-      
-      {/* Custom Fertilizer Editor Modal */}
-      {isCustomFertilizerModalOpen && (
-        <FertilizerEditorModal 
-            onClose={() => setIsCustomFertilizerModalOpen(false)} 
-            onSave={handleSaveCustomFertilizer}
         />
       )}
       

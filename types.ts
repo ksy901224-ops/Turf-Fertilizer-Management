@@ -2,7 +2,7 @@
 export interface Fertilizer {
   name: string;
   usage: '그린' | '티' | '페어웨이';
-  type: string; // Changed from strict union to string to support expanded categories
+  type: '완효성' | '액상' | '4종복합비료' | '수용성' | '기능성제제' | '유기농' | '토양개량제';
   N: number;
   P: number;
   K: number;
@@ -21,7 +21,7 @@ export interface Fertilizer {
   Ni: number;
   Co: number;
   V: number;
-  aminoAcid?: number;
+  aminoAcid?: number; // New field for Amino Acids
   price: number;
   unit: string;
   rate: string;
@@ -67,7 +67,7 @@ export interface User {
   username: string;
   password?: string;
   golfCourse: string;
-  isApproved?: boolean;
+  isApproved?: boolean; // New field for approval status
 }
 
 export interface UserDataSummary {
@@ -78,7 +78,7 @@ export interface UserDataSummary {
     lastActivity: string | null;
     logs: LogEntry[];
     fertilizers: Fertilizer[];
-    isApproved: boolean;
+    isApproved: boolean; // New field for dashboard
 }
 
 export interface NotificationSettings {
