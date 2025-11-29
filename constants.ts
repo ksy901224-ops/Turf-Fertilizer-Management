@@ -3,32 +3,27 @@ export const NUTRIENTS = ['N','P','K','Ca','Mg','S','Fe','Mn','Zn','Cu','B','Mo'
 
 export const USAGE_CATEGORIES = ['그린', '티', '페어웨이'];
 
+// Hierarchical Fertilizer Categories
 export const FERTILIZER_TYPE_GROUPS = {
     "I. 완효성 및 기초 비료": [
-        "완효성", 
         "N-P-K 균형 비료",
         "고인산/고칼륨 비료",
-        "수용성", 
-        "4종복합비료"
+        "수용성 기초 비료"
     ],
     "II. 토양 및 양분 개선제": [
-        "토양개량제", 
+        "토양 개량제 (Ca/Mg/S)",
         "습윤 및 침투제",
-        "유기물 / 대취 분해",
-        "유기농" 
+        "유기물 / 대취 분해"
     ],
     "III. 미량요소 및 보조제": [
-        "액상", 
         "킬레이트 미량요소",
         "고순도 철분/칼륨"
     ],
     "IV. 활력 및 스트레스 관리": [
-        "기능성제제", 
         "냉해/동해 방지제"
     ],
     "V. 생리 활성 촉진제": [
-        "발근 및 생육 촉진",
-        "아미노산/해조추출물"
+        "발근 및 생육 촉진"
     ],
     "VI. 기타 특성화 제품": [
         "착색 및 보조제",
@@ -36,6 +31,7 @@ export const FERTILIZER_TYPE_GROUPS = {
     ]
 };
 
+// Flattened list for backward compatibility and validation
 export const TYPE_CATEGORIES = Object.values(FERTILIZER_TYPE_GROUPS).flat();
 
 // Annual N-P-K recommendation guide (g/m²)
