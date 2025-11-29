@@ -2,7 +2,7 @@
 export interface Fertilizer {
   name: string;
   usage: '그린' | '티' | '페어웨이';
-  type: '완효성' | '액상' | '4종복합비료' | '수용성' | '기능성제제' | '유기농' | '토양개량제';
+  type: string;
   N: number;
   P: number;
   K: number;

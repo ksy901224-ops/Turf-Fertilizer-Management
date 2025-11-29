@@ -4,8 +4,9 @@ import * as api from './api';
 import * as XLSX from 'xlsx';
 import { GoogleGenAI } from '@google/genai';
 import { UserDataSummary, Fertilizer, LogEntry } from './types';
-import { LogoutIcon, DashboardIcon, UsersIcon, PlusIcon, TrashIcon, CloseIcon, ClipboardListIcon, CameraIcon, DocumentSearchIcon, UploadIcon, SparklesIcon, DownloadIcon } from './icons';
+import { LogoutIcon, DashboardIcon, UsersIcon, PlusIcon, TrashIcon, CloseIcon, ClipboardListIcon, CameraIcon, DocumentSearchIcon, UploadIcon, SparklesIcon, DownloadIcon, CalendarIcon } from './icons';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { FERTILIZER_TYPE_GROUPS } from './constants';
 
 interface AdminDashboardProps {
     user: string;
@@ -62,20 +63,41 @@ interface UserDetailModalProps {
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
 
 const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose }) => {
-    const [statsView, setStatsView] = useState<'monthly' | 'daily' | 'yearly'>('monthly');
+    // Determine available years from logs
+    const availableYears = useMemo(() => {
+        const years = new Set(userData.logs.map(l => l.date.split('-')[0]));
+        return Array.from(years).sort().reverse();
+    }, [userData.logs]);
 
-    // 1. Calculate Product Statistics (Most used, Cost share, Quantity)
+    const [selectedYear, setSelectedYear] = useState<string>(
+        availableYears.length > 0 ? availableYears[0] : new Date().getFullYear().toString()
+    );
+    const [statsView, setStatsView] = useState<'monthly' | 'daily' | 'yearly'>('monthly');
+    const [chartMetric, setChartMetric] = useState<'cost' | 'count'>('cost'); // 'cost' or 'count'
+
+    // Filter logs based on selected year (or all)
+    const filteredLogs = useMemo(() => {
+        if (selectedYear === 'all') return userData.logs;
+        return userData.logs.filter(l => l.date.startsWith(selectedYear));
+    }, [userData.logs, selectedYear]);
+
+    // Automatically switch chart view based on selection
+    useEffect(() => {
+        if (selectedYear === 'all') setStatsView('yearly');
+        else setStatsView('monthly');
+    }, [selectedYear]);
+
+    // 1. Calculate Product Statistics (Filtered by Year)
     const productStats = useMemo(() => {
-        const stats: Record<string, { count: number, totalCost: number, totalAmount: number, unitHint: string, name: string }> = {};
-        userData.logs.forEach(log => {
+        const stats: Record<string, { count: number, totalCost: number, totalAmount: number, unitHint: string, name: string, usage: string }> = {};
+        filteredLogs.forEach(log => {
             if (!stats[log.product]) {
-                stats[log.product] = { count: 0, totalCost: 0, totalAmount: 0, unitHint: '', name: log.product };
+                stats[log.product] = { count: 0, totalCost: 0, totalAmount: 0, unitHint: '', name: log.product, usage: log.usage };
             }
             stats[log.product].count += 1;
             stats[log.product].totalCost += log.totalCost;
             
             // Estimate amount (kg or L) based on area * rate / 1000
-            // This assumes rate is g/m2 or ml/m2
             const amount = (log.area * log.applicationRate) / 1000;
             stats[log.product].totalAmount += amount;
             
@@ -84,7 +106,7 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose }) 
             }
         });
         return Object.values(stats).sort((a, b) => b.totalCost - a.totalCost);
-    }, [userData.logs]);
+    }, [filteredLogs]);
 
     const mostFrequentProduct = useMemo(() => {
         if (productStats.length === 0) return null;
@@ -95,36 +117,46 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose }) 
         return productStats.slice(0, 5).map(p => ({ name: p.name, value: p.totalCost }));
     }, [productStats]);
 
-    // 2. Calculate Time-based Statistics
+    // 2. Calculate Time-based Statistics (Filtered by Year)
     const timeStats = useMemo(() => {
-        const monthly: Record<string, number> = {};
-        const yearly: Record<string, number> = {};
-        const daily: Record<string, number> = {};
+        const monthly: Record<string, { cost: number, count: number }> = {};
+        const yearly: Record<string, { cost: number, count: number }> = {};
+        const daily: Record<string, { cost: number, count: number }> = {};
 
-        userData.logs.forEach(log => {
+        filteredLogs.forEach(log => {
             const date = new Date(log.date);
             const y = date.getFullYear().toString();
             const m = `${y}-${String(date.getMonth() + 1).padStart(2, '0')}`;
             const d = log.date; // YYYY-MM-DD
 
-            yearly[y] = (yearly[y] || 0) + log.totalCost;
-            monthly[m] = (monthly[m] || 0) + log.totalCost;
-            daily[d] = (daily[d] || 0) + log.totalCost;
+            if (!yearly[y]) yearly[y] = { cost: 0, count: 0 };
+            yearly[y].cost += log.totalCost;
+            yearly[y].count += 1;
+
+            if (!monthly[m]) monthly[m] = { cost: 0, count: 0 };
+            monthly[m].cost += log.totalCost;
+            monthly[m].count += 1;
+
+            if (!daily[d]) daily[d] = { cost: 0, count: 0 };
+            daily[d].cost += log.totalCost;
+            daily[d].count += 1;
         });
 
-        // Convert to arrays for charts/tables
-        const monthlyArr = Object.entries(monthly).map(([k, v]) => ({ period: k, cost: v })).sort((a, b) => a.period.localeCompare(b.period));
-        const yearlyArr = Object.entries(yearly).map(([k, v]) => ({ period: k, cost: v })).sort((a, b) => a.period.localeCompare(b.period));
-        const dailyArr = Object.entries(daily).map(([k, v]) => ({ period: k, cost: v })).sort((a, b) => a.period.localeCompare(b.period)); // Sort daily ascending for chart
+        const monthlyArr = Object.entries(monthly).map(([k, v]) => ({ period: k, cost: v.cost, count: v.count })).sort((a, b) => a.period.localeCompare(b.period));
+        const yearlyArr = Object.entries(yearly).map(([k, v]) => ({ period: k, cost: v.cost, count: v.count })).sort((a, b) => a.period.localeCompare(b.period));
+        const dailyArr = Object.entries(daily).map(([k, v]) => ({ period: k, cost: v.cost, count: v.count })).sort((a, b) => a.period.localeCompare(b.period));
 
         return { monthly: monthlyArr, yearly: yearlyArr, daily: dailyArr };
-    }, [userData.logs]);
+    }, [filteredLogs]);
 
     const formatXAxis = (tickItem: string) => {
-        if (statsView === 'monthly') return tickItem.slice(5); // 2023-05 -> 05
-        if (statsView === 'daily') return tickItem.slice(5); // 2023-05-20 -> 05-20
-        return tickItem; // 2023
+        if (statsView === 'monthly') return tickItem.slice(5); 
+        if (statsView === 'daily') return tickItem.slice(5);
+        return tickItem;
     };
+
+    // Calculate Totals for Summary Cards
+    const currentTotalCost = filteredLogs.reduce((acc, log) => acc + log.totalCost, 0);
 
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4" onClick={onClose}>
@@ -136,9 +168,19 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose }) 
                             <span className="bg-blue-600 text-white text-xs px-2 py-1 rounded-full">사용자 상세 분석</span>
                             {userData.username} ({userData.golfCourse})
                         </h2>
-                        <p className="text-slate-500 text-sm mt-1">총 기록: {userData.logCount}건 | 가입일: {userData.isApproved ? '승인됨' : '대기중'}</p>
+                        <p className="text-slate-500 text-sm mt-1">
+                            {selectedYear === 'all' ? '전체 기간' : `${selectedYear}년`} 데이터 분석 | 총 기록: {filteredLogs.length}건
+                        </p>
                     </div>
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 items-center">
+                        <select 
+                            value={selectedYear} 
+                            onChange={(e) => setSelectedYear(e.target.value)}
+                            className="bg-white border border-slate-300 text-slate-700 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2 mr-2 shadow-sm"
+                        >
+                            {availableYears.map(year => <option key={year} value={year}>{year}년</option>)}
+                            <option value="all">전체 기간</option>
+                        </select>
                         <button 
                             onClick={() => exportUserLogsToExcel(userData)}
                             className="flex items-center gap-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded shadow transition-colors"
@@ -153,8 +195,8 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose }) 
                     {/* Summary Cards */}
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
-                            <h4 className="text-blue-800 text-xs font-bold uppercase mb-1">총 누적 비용</h4>
-                            <p className="text-2xl font-bold text-blue-900">{Math.round(userData.totalCost).toLocaleString()}원</p>
+                            <h4 className="text-blue-800 text-xs font-bold uppercase mb-1">{selectedYear === 'all' ? '총 누적 비용' : `${selectedYear}년 총 비용`}</h4>
+                            <p className="text-2xl font-bold text-blue-900">{Math.round(currentTotalCost).toLocaleString()}원</p>
                         </div>
                         <div className="bg-green-50 p-4 rounded-lg border border-green-100">
                             <h4 className="text-green-800 text-xs font-bold uppercase mb-1">최다 사용 (빈도)</h4>
@@ -172,22 +214,102 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose }) 
                         </div>
                     </div>
 
+                    {/* Annual Usage Table Section */}
+                    <div className="bg-white border border-slate-200 rounded-lg overflow-hidden shadow-sm">
+                        <div className="p-4 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+                            <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                                <CalendarIcon className="w-5 h-5 text-slate-500" /> 
+                                {selectedYear === 'all' ? '전체 기간' : `${selectedYear}년`} 비료 총 사용량 및 생육 패턴 분석
+                            </h3>
+                            <span className="text-xs text-slate-500 bg-white px-2 py-1 rounded border">생육 패턴 파악용</span>
+                        </div>
+                        <div className="p-4 bg-blue-50/50 border-b border-blue-100 text-xs text-blue-800">
+                            * 본 섹션은 선택된 기간({selectedYear === 'all' ? '전체' : `${selectedYear}년`}) 동안 투입된 비료의 <strong>총 물량(kg/L)</strong>을 집계하여, 골프장의 자재 투입 강도와 패턴을 파악하는 데 도움을 줍니다.
+                        </div>
+                        <div className="max-h-80 overflow-y-auto">
+                            <table className="w-full text-sm text-left">
+                                <thead className="bg-slate-100 text-slate-600 sticky top-0 z-10">
+                                    <tr>
+                                        <th className="p-3 pl-4">제품명</th>
+                                        <th className="p-3 text-center">구분</th>
+                                        <th className="p-3 text-right">사용 횟수</th>
+                                        <th className="p-3 text-right">총 투입 물량 (kg/L)</th>
+                                        <th className="p-3 text-right pr-4">총 비용</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {productStats.length > 0 ? (
+                                        productStats.map((item, idx) => (
+                                            <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                                                <td className="p-3 pl-4 font-medium text-slate-700">{item.name}</td>
+                                                <td className="p-3 text-center">
+                                                    <span className={`text-[10px] px-2 py-0.5 rounded-full ${
+                                                        item.usage === '그린' ? 'bg-green-100 text-green-800' :
+                                                        item.usage === '티' ? 'bg-blue-100 text-blue-800' : 'bg-orange-100 text-orange-800'
+                                                    }`}>
+                                                        {item.usage}
+                                                    </span>
+                                                </td>
+                                                <td className="p-3 text-right text-slate-600">{item.count}회</td>
+                                                <td className="p-3 text-right font-bold text-slate-800 bg-slate-50/50">
+                                                    {item.totalAmount.toLocaleString(undefined, {minimumFractionDigits: 1, maximumFractionDigits: 1})}
+                                                    <span className="text-xs font-normal text-slate-500 ml-1">{item.unitHint}</span>
+                                                </td>
+                                                <td className="p-3 text-right pr-4 font-mono text-slate-600">
+                                                    {Math.round(item.totalCost).toLocaleString()}원
+                                                </td>
+                                            </tr>
+                                        ))
+                                    ) : (
+                                        <tr><td colSpan={5} className="p-8 text-center text-slate-400">해당 기간의 데이터가 없습니다.</td></tr>
+                                    )}
+                                </tbody>
+                                {productStats.length > 0 && (
+                                    <tfoot className="bg-slate-50 font-bold text-slate-700 border-t-2 border-slate-200">
+                                        <tr>
+                                            <td colSpan={2} className="p-3 pl-4 text-right">합계</td>
+                                            <td className="p-3 text-right">{productStats.reduce((a,b)=>a+b.count,0)}회</td>
+                                            <td className="p-3 text-center text-xs text-slate-400 font-normal">(단위 혼합)</td>
+                                            <td className="p-3 text-right pr-4 text-blue-700">{Math.round(currentTotalCost).toLocaleString()}원</td>
+                                        </tr>
+                                    </tfoot>
+                                )}
+                            </table>
+                        </div>
+                    </div>
+
                     {/* Charts Row */}
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        {/* Cost Chart */}
+                        {/* Cost/Count Chart */}
                         <div className="bg-white p-4 rounded-lg border shadow-sm flex flex-col">
-                            <div className="flex justify-between items-center mb-4">
-                                <h3 className="font-bold text-slate-700">📊 기간별 비용 추이</h3>
-                                <div className="flex bg-slate-100 rounded p-1">
-                                    {(['daily', 'monthly', 'yearly'] as const).map(view => (
-                                        <button
-                                            key={view}
-                                            onClick={() => setStatsView(view)}
-                                            className={`px-3 py-1 text-xs font-bold rounded transition-colors ${statsView === view ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                                        >
-                                            {view === 'daily' ? '일별' : view === 'monthly' ? '월별' : '연간'}
-                                        </button>
-                                    ))}
+                            <div className="flex flex-col gap-3 mb-4">
+                                <div className="flex justify-between items-center">
+                                    <h3 className="font-bold text-slate-700">📊 기간별 활동 추이</h3>
+                                    <div className="flex bg-slate-100 rounded p-1">
+                                        {(['daily', 'monthly', 'yearly'] as const).map(view => (
+                                            <button
+                                                key={view}
+                                                onClick={() => setStatsView(view)}
+                                                className={`px-3 py-1 text-xs font-bold rounded transition-colors ${statsView === view ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                            >
+                                                {view === 'daily' ? '일별' : view === 'monthly' ? '월별' : '연간'}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                                <div className="flex bg-slate-100 rounded p-1 self-start">
+                                    <button 
+                                        onClick={() => setChartMetric('cost')}
+                                        className={`px-3 py-1 text-xs font-bold rounded transition-colors ${chartMetric === 'cost' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                    >
+                                        비용 (원)
+                                    </button>
+                                    <button 
+                                        onClick={() => setChartMetric('count')}
+                                        className={`px-3 py-1 text-xs font-bold rounded transition-colors ${chartMetric === 'count' ? 'bg-white text-green-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                    >
+                                        사용 횟수 (건)
+                                    </button>
                                 </div>
                             </div>
                             <div className="h-64">
@@ -197,10 +319,16 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose }) 
                                         <XAxis dataKey="period" fontSize={12} tickFormatter={formatXAxis} />
                                         <YAxis fontSize={12} />
                                         <Tooltip 
-                                            formatter={(val: number) => `${Math.round(val).toLocaleString()}원`} 
+                                            formatter={(val: number) => chartMetric === 'cost' ? `${Math.round(val).toLocaleString()}원` : `${val}회`} 
                                             labelFormatter={(label) => label}
                                         />
-                                        <Bar dataKey="cost" name="비용" fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={50} />
+                                        <Bar 
+                                            dataKey={chartMetric} 
+                                            name={chartMetric === 'cost' ? "비용" : "사용 횟수"} 
+                                            fill={chartMetric === 'cost' ? "#3b82f6" : "#22c55e"} 
+                                            radius={[4, 4, 0, 0]} 
+                                            maxBarSize={50} 
+                                        />
                                     </BarChart>
                                 </ResponsiveContainer>
                             </div>
@@ -231,71 +359,6 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose }) 
                                     </PieChart>
                                 </ResponsiveContainer>
                             </div>
-                        </div>
-                    </div>
-
-                    {/* Product Usage Detail Table */}
-                    <div className="bg-white border rounded-lg overflow-hidden">
-                        <div className="p-4 bg-slate-50 border-b">
-                            <h3 className="font-bold text-slate-700">📦 제품별 상세 사용 내역</h3>
-                        </div>
-                        <div className="max-h-64 overflow-y-auto">
-                            <table className="w-full text-sm text-left">
-                                <thead className="bg-slate-100 text-slate-600 sticky top-0 z-10">
-                                    <tr>
-                                        <th className="p-3">제품명</th>
-                                        <th className="p-3 text-right">사용 횟수</th>
-                                        <th className="p-3 text-right">총 사용량 (추정)</th>
-                                        <th className="p-3 text-right">총 비용</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {productStats.length > 0 ? (
-                                        productStats.map((item, idx) => (
-                                            <tr key={idx} className="hover:bg-slate-50">
-                                                <td className="p-3 text-slate-700 font-medium">{item.name}</td>
-                                                <td className="p-3 text-right text-slate-600">{item.count}회</td>
-                                                <td className="p-3 text-right text-slate-600">
-                                                    {item.totalAmount.toFixed(1)} <span className="text-xs text-slate-400">{item.unitHint}</span>
-                                                </td>
-                                                <td className="p-3 text-right font-mono font-bold text-slate-800">{Math.round(item.totalCost).toLocaleString()}원</td>
-                                            </tr>
-                                        ))
-                                    ) : (
-                                        <tr><td colSpan={4} className="p-6 text-center text-slate-400">데이터가 없습니다.</td></tr>
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    {/* Period Data Table */}
-                    <div className="bg-white border rounded-lg overflow-hidden">
-                         <div className="p-4 bg-slate-50 border-b">
-                            <h3 className="font-bold text-slate-700">📅 기간별 비용 내역 ({statsView === 'daily' ? '일별' : statsView === 'monthly' ? '월별' : '연간'})</h3>
-                        </div>
-                        <div className="max-h-64 overflow-y-auto">
-                            <table className="w-full text-sm text-left">
-                                <thead className="bg-slate-100 text-slate-600 sticky top-0 z-10">
-                                    <tr>
-                                        <th className="p-3">기간</th>
-                                        <th className="p-3 text-right">비용</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {timeStats[statsView].length > 0 ? (
-                                        // Sort desc for table (newest first)
-                                        [...timeStats[statsView]].sort((a,b) => b.period.localeCompare(a.period)).map((item, idx) => (
-                                            <tr key={idx} className="hover:bg-slate-50">
-                                                <td className="p-3 text-slate-700">{item.period}</td>
-                                                <td className="p-3 text-right font-mono font-medium text-slate-900">{Math.round(item.cost).toLocaleString()}원</td>
-                                            </tr>
-                                        ))
-                                    ) : (
-                                        <tr><td colSpan={2} className="p-6 text-center text-slate-400">데이터가 없습니다.</td></tr>
-                                    )}
-                                </tbody>
-                            </table>
                         </div>
                     </div>
                 </div>
@@ -360,8 +423,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
 
     const processedUsers = useMemo(() => {
         let data = [...approvedUsersList];
-
-        // Filter
         if (userSearchTerm) {
             const lowerTerm = userSearchTerm.toLowerCase();
             data = data.filter(u => 
@@ -369,8 +430,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 u.golfCourse.toLowerCase().includes(lowerTerm)
             );
         }
-
-        // Sort
         data.sort((a, b) => {
             let comparison = 0;
             switch (userSortField) {
@@ -390,7 +449,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             }
             return userSortOrder === 'asc' ? comparison : -comparison;
         });
-
         return data;
     }, [approvedUsersList, userSearchTerm, userSortField, userSortOrder]);
 
@@ -406,12 +464,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
     const handleApproveUser = async (username: string) => {
         if (window.confirm(`${username} 님의 가입을 승인하시겠습니까?`)) {
             await api.approveUser(username);
-            // Clear from selection if present
-            setSelectedPendingUsers(prev => {
-                const next = new Set(prev);
-                next.delete(username);
-                return next;
-            });
+            setSelectedPendingUsers(prev => { const next = new Set(prev); next.delete(username); return next; });
             await loadData();
         }
     };
@@ -419,12 +472,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
     const handleDeleteUser = async (username: string) => {
         if (window.confirm(`${username} 님을 삭제(거절)하시겠습니까? 관련된 모든 데이터가 삭제됩니다.`)) {
             await api.deleteUser(username);
-            // Clear from selection if present
-            setSelectedPendingUsers(prev => {
-                const next = new Set(prev);
-                next.delete(username);
-                return next;
-            });
+            setSelectedPendingUsers(prev => { const next = new Set(prev); next.delete(username); return next; });
             if (selectedUserForDetail?.username === username) setSelectedUserForDetail(null);
             await loadData();
         }
@@ -432,29 +480,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
 
     const togglePendingUserSelection = (username: string) => {
         const newSet = new Set(selectedPendingUsers);
-        if (newSet.has(username)) {
-            newSet.delete(username);
-        } else {
-            newSet.add(username);
-        }
+        if (newSet.has(username)) newSet.delete(username); else newSet.add(username);
         setSelectedPendingUsers(newSet);
     };
 
     const toggleSelectAllPending = () => {
-        if (selectedPendingUsers.size === pendingUsersList.length) {
-            setSelectedPendingUsers(new Set());
-        } else {
-            const allUsernames = pendingUsersList.map(u => u.username);
-            setSelectedPendingUsers(new Set(allUsernames));
-        }
+        if (selectedPendingUsers.size === pendingUsersList.length) setSelectedPendingUsers(new Set());
+        else setSelectedPendingUsers(new Set(pendingUsersList.map(u => u.username)));
     };
 
     const handleBulkApprove = async () => {
         if (selectedPendingUsers.size === 0) return;
         if (window.confirm(`선택한 ${selectedPendingUsers.size}명의 사용자를 일괄 승인하시겠습니까?`)) {
-            for (const username of Array.from(selectedPendingUsers)) {
-                await api.approveUser(username);
-            }
+            for (const username of Array.from(selectedPendingUsers)) await api.approveUser(username);
             setSelectedPendingUsers(new Set());
             await loadData();
         }
@@ -463,9 +501,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
     const handleBulkReject = async () => {
         if (selectedPendingUsers.size === 0) return;
         if (window.confirm(`선택한 ${selectedPendingUsers.size}명의 사용자를 일괄 거절(삭제)하시겠습니까?`)) {
-            for (const username of Array.from(selectedPendingUsers)) {
-                await api.deleteUser(username);
-            }
+            for (const username of Array.from(selectedPendingUsers)) await api.deleteUser(username);
             setSelectedPendingUsers(new Set());
             await loadData();
         }
@@ -486,38 +522,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             alert('필수 정보를 모두 입력해주세요.');
             return;
         }
-
         const fertilizerToAdd: Fertilizer = {
             name: newFertilizer.name,
-            usage: newFertilizer.usage as '그린' | '티' | '페어웨이',
+            usage: newFertilizer.usage as any,
             type: newFertilizer.type as any,
-            N: Number(newFertilizer.N || 0),
-            P: Number(newFertilizer.P || 0),
-            K: Number(newFertilizer.K || 0),
-            Ca: Number(newFertilizer.Ca || 0),
-            Mg: Number(newFertilizer.Mg || 0),
-            S: Number(newFertilizer.S || 0),
-            Fe: Number(newFertilizer.Fe || 0),
-            Mn: Number(newFertilizer.Mn || 0),
-            Zn: Number(newFertilizer.Zn || 0),
-            Cu: Number(newFertilizer.Cu || 0),
-            B: Number(newFertilizer.B || 0),
-            Mo: Number(newFertilizer.Mo || 0),
-            Cl: Number(newFertilizer.Cl || 0),
-            Na: Number(newFertilizer.Na || 0),
-            Si: Number(newFertilizer.Si || 0),
-            Ni: Number(newFertilizer.Ni || 0),
-            Co: Number(newFertilizer.Co || 0),
-            V: Number(newFertilizer.V || 0),
-            aminoAcid: Number(newFertilizer.aminoAcid || 0),
-            price: Number(newFertilizer.price || 0),
-            unit: newFertilizer.unit,
-            rate: newFertilizer.rate,
-            stock: 0,
-            imageUrl: '',
-            lowStockAlertEnabled: false,
+            N: Number(newFertilizer.N || 0), P: Number(newFertilizer.P || 0), K: Number(newFertilizer.K || 0),
+            Ca: Number(newFertilizer.Ca || 0), Mg: Number(newFertilizer.Mg || 0), S: Number(newFertilizer.S || 0),
+            Fe: Number(newFertilizer.Fe || 0), Mn: Number(newFertilizer.Mn || 0), Zn: Number(newFertilizer.Zn || 0),
+            Cu: Number(newFertilizer.Cu || 0), B: Number(newFertilizer.B || 0), Mo: Number(newFertilizer.Mo || 0),
+            Cl: Number(newFertilizer.Cl || 0), Na: Number(newFertilizer.Na || 0), Si: Number(newFertilizer.Si || 0),
+            Ni: Number(newFertilizer.Ni || 0), Co: Number(newFertilizer.Co || 0), V: Number(newFertilizer.V || 0),
+            aminoAcid: Number(newFertilizer.aminoAcid || 0), price: Number(newFertilizer.price || 0),
+            unit: newFertilizer.unit, rate: newFertilizer.rate, stock: 0, imageUrl: '', lowStockAlertEnabled: false,
         };
-
         const newList = [...masterFertilizers, fertilizerToAdd];
         await api.saveFertilizers('admin', newList);
         setMasterFertilizers(newList);
@@ -526,7 +543,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
     };
 
     // --- AI Smart Fill Logic ---
-
     const processAiRequest = async (promptText: string, inlineDataParts: any[] = []) => {
         setIsAiFillLoading(true);
         setAiError(null);
@@ -542,53 +558,31 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                     "unit": "Packaging Unit (e.g., '20kg')",
                     "price": Number (approximate or 0 if unknown),
                     "rate": "Recommended Rate (e.g., '20g/㎡')",
-                    "N": Number (Percentage),
-                    "P": Number (Percentage),
-                    "K": Number (Percentage),
-                    "Ca": Number, "Mg": Number, "S": Number, "Fe": Number, "Mn": Number, 
-                    "Zn": Number, "Cu": Number, "B": Number, "Mo": Number, 
-                    "Cl": Number, "Na": Number, "Si": Number, "Ni": Number, "Co": Number, "V": Number,
-                    "aminoAcid": Number (Percentage of Amino Acids if present)
+                    "N": Number (Percentage), "P": Number, "K": Number, "Ca": Number, "Mg": Number, "S": Number, 
+                    "Fe": Number, "Mn": Number, "Zn": Number, "Cu": Number, "B": Number, "Mo": Number,
+                    "aminoAcid": Number (Percentage)
                 }
                 
                 Important Rules:
-                1. If 'usage' is unknown or ambiguous, infer it from the context (e.g., 'fine turf' implies '그린', 'sports field' implies '페어웨이'). If completely unknown, default to '그린'.
-                2. If 'type' is unknown, infer it. 'Soil conditioner' -> '토양개량제', 'Functional' -> '기능성제제'. Default to '완효성'.
-                3. Extract amino acid percentage if mentioned (e.g., "Amino Acid 10%" -> 10).
-                4. Ensure all nutrient values are numbers (percentages). If not found, use 0.
-                5. Do NOT include any markdown formatting or explanations. Just the raw JSON.
+                1. Infer usage and type if unknown. Default usage '그린', type '완효성'.
+                2. Ensure all values are raw JSON without markdown.
                 
                 Input Data:
                 ${promptText}
             `;
-
             const response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash',
-                contents: {
-                    parts: [
-                        { text: prompt },
-                        ...inlineDataParts
-                    ]
-                }
+                contents: { parts: [{ text: prompt }, ...inlineDataParts] }
             });
-
             let text = response.text;
-            if (!text) {
-                throw new Error("AI response text is empty or invalid.");
-            }
-            // Clean up code blocks if present
+            if (!text) throw new Error("AI response text is empty or invalid.");
             text = text.replace(/```json/g, '').replace(/```/g, '').trim();
             const data = JSON.parse(text);
-
             setNewFertilizer(prev => ({
-                ...prev,
-                ...data,
-                // Ensure usage and type are valid enum values
+                ...prev, ...data,
                 usage: ['그린', '티', '페어웨이'].includes(data.usage) ? data.usage : '그린',
                 type: ['완효성', '액상', '수용성', '4종복합비료', '기능성제제', '토양개량제'].includes(data.type) ? data.type : '완효성',
             }));
-            
-            // Switch to form view implicitly by user seeing fields populated
         } catch (e) {
             console.error("AI Fill Error:", e);
             setAiError("분석에 실패했습니다. 올바른 데이터인지 확인해주세요.");
@@ -609,7 +603,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.name.endsWith('.csv')) {
             const reader = new FileReader();
             reader.onload = async (event: ProgressEvent<FileReader>) => {
-                const target = event.target as FileReader;
+                const target = event.target;
                 if (!target) return;
                 const data = target.result;
                 if (!data || typeof data === 'string') return; // Expecting ArrayBuffer for 'array' type read
@@ -618,14 +612,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 const wsname = wb.SheetNames[0];
                 if (!wsname) return;
                 const ws = wb.Sheets[wsname];
-                const csvData = XLSX.utils.sheet_to_csv(ws);
+                if (!ws) return;
+                
+                // Explicitly cast to unknown then string to satisfy compiler if types are loose
+                const csvData = (XLSX.utils.sheet_to_csv(ws) as unknown) as string;
                 await processAiRequest(`Extracted Spreadsheet Data:\n${csvData}`);
             };
             reader.readAsArrayBuffer(file);
         } else if (file.type.startsWith('image/') || file.type === 'application/pdf') {
             const reader = new FileReader();
             reader.onloadend = async (event: ProgressEvent<FileReader>) => {
-                const target = event.target as FileReader;
+                const target = event.target;
                 if (!target) return;
                 const result = target.result;
                 if (typeof result !== 'string') return;
@@ -645,7 +642,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
              // Treat as text file
             const reader = new FileReader();
             reader.onload = async (event: ProgressEvent<FileReader>) => {
-                const target = event.target as FileReader;
+                const target = event.target;
                 if (!target) return;
                 const text = target.result;
                 if (typeof text !== 'string') return;
@@ -1007,12 +1004,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                                         <div>
                                             <label className="block text-xs font-bold text-slate-600 mb-1">타입</label>
                                             <select className="w-full border p-2 rounded" value={newFertilizer.type} onChange={e => setNewFertilizer({...newFertilizer, type: e.target.value as any})}>
-                                                <option value="완효성">완효성</option>
-                                                <option value="액상">액상</option>
-                                                <option value="수용성">수용성</option>
-                                                <option value="4종복합비료">4종복합</option>
-                                                <option value="기능성제제">기능성제제</option>
-                                                <option value="토양개량제">토양개량제</option>
+                                                {Object.entries(FERTILIZER_TYPE_GROUPS).map(([group, types]) => (
+                                                    <optgroup key={group} label={group}>
+                                                        {types.map(t => (
+                                                            <option key={t} value={t}>{t}</option>
+                                                        ))}
+                                                    </optgroup>
+                                                ))}
                                             </select>
                                         </div>
                                     </div>
