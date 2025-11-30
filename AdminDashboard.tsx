@@ -1,11 +1,11 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import * as api from './api';
 import * as XLSX from 'xlsx';
 import { GoogleGenAI } from '@google/genai';
 import { UserDataSummary, Fertilizer, LogEntry } from './types';
-import { LogoutIcon, DashboardIcon, UsersIcon, PlusIcon, TrashIcon, CloseIcon, ClipboardListIcon, CameraIcon, DocumentSearchIcon, UploadIcon, SparklesIcon, DownloadIcon } from './icons';
+import { LogoutIcon, DashboardIcon, UsersIcon, PlusIcon, TrashIcon, CloseIcon, ClipboardListIcon, CameraIcon, DocumentSearchIcon, UploadIcon, SparklesIcon, DownloadIcon, PencilIcon } from './icons';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { FERTILIZER_TYPE_GROUPS } from './constants';
 
 interface AdminDashboardProps {
     user: string;
@@ -319,6 +319,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
     
     // New Fertilizer Form State
     const [isAddFertilizerModalOpen, setIsAddFertilizerModalOpen] = useState(false);
+    const [editingFertilizerIndex, setEditingFertilizerIndex] = useState<number | null>(null);
     const [newFertilizer, setNewFertilizer] = useState<Partial<Fertilizer>>({
         type: '완효성',
         usage: '그린'
@@ -481,13 +482,25 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         }
     };
 
-    const handleAddFertilizer = async () => {
+    const openAddModal = () => {
+        setEditingFertilizerIndex(null);
+        setNewFertilizer({ type: '완효성', usage: '그린' });
+        setIsAddFertilizerModalOpen(true);
+    };
+
+    const openEditModal = (index: number, fertilizer: Fertilizer) => {
+        setEditingFertilizerIndex(index);
+        setNewFertilizer({ ...fertilizer });
+        setIsAddFertilizerModalOpen(true);
+    };
+
+    const handleSaveFertilizer = async () => {
         if (!newFertilizer.name || !newFertilizer.unit || !newFertilizer.rate) {
             alert('필수 정보를 모두 입력해주세요.');
             return;
         }
 
-        const fertilizerToAdd: Fertilizer = {
+        const fertilizerData: Fertilizer = {
             name: newFertilizer.name,
             usage: newFertilizer.usage as '그린' | '티' | '페어웨이',
             type: newFertilizer.type as any,
@@ -513,16 +526,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             price: Number(newFertilizer.price || 0),
             unit: newFertilizer.unit,
             rate: newFertilizer.rate,
-            stock: 0,
-            imageUrl: '',
-            lowStockAlertEnabled: false,
+            stock: newFertilizer.stock || 0,
+            imageUrl: newFertilizer.imageUrl || '',
+            lowStockAlertEnabled: newFertilizer.lowStockAlertEnabled || false,
+            description: newFertilizer.description || '',
         };
 
-        const newList = [...masterFertilizers, fertilizerToAdd];
+        const newList = [...masterFertilizers];
+        if (editingFertilizerIndex !== null) {
+            newList[editingFertilizerIndex] = fertilizerData;
+        } else {
+            newList.push(fertilizerData);
+        }
+
         await api.saveFertilizers('admin', newList);
         setMasterFertilizers(newList);
         setIsAddFertilizerModalOpen(false);
         setNewFertilizer({ type: '완효성', usage: '그린' });
+        setEditingFertilizerIndex(null);
     };
 
     // --- AI Smart Fill Logic ---
@@ -532,16 +553,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         setAiError(null);
         try {
             const ai = new GoogleGenAI({ apiKey: (process.env.API_KEY as string) });
+            const groupsJSON = JSON.stringify(FERTILIZER_TYPE_GROUPS);
+            
             const prompt = `
                 Analyze the provided fertilizer information (Text, Image, Excel, PDF, or CSV).
                 Extract the following details and return ONLY a JSON object:
                 {
                     "name": "Product Name",
                     "usage": "One of ['그린', '티', '페어웨이']",
-                    "type": "One of ['완효성', '액상', '수용성', '4종복합비료', '기능성제제', '토양개량제']",
-                    "unit": "Packaging Unit (e.g., '20kg')",
+                    "type": "Most appropriate specific subtype string from the list provided below",
+                    "unit": "Packaging Unit (e.g., '20kg', '10L')",
                     "price": Number (approximate or 0 if unknown),
                     "rate": "Recommended Rate (e.g., '20g/㎡')",
+                    "description": "A summary of the product features, effects, or marketing description in Korean",
                     "N": Number (Percentage),
                     "P": Number (Percentage),
                     "K": Number (Percentage),
@@ -552,10 +576,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 }
                 
                 Important Rules:
-                1. If 'usage' is unknown or ambiguous, infer it from the context (e.g., 'fine turf' implies '그린', 'sports field' implies '페어웨이'). If completely unknown, default to '그린'.
-                2. If 'type' is unknown, infer it. 'Soil conditioner' -> '토양개량제', 'Functional' -> '기능성제제'. Default to '완효성'.
-                3. Extract amino acid percentage if mentioned (e.g., "Amino Acid 10%" -> 10).
-                4. Ensure all nutrient values are numbers (percentages). If not found, use 0.
+                1. **Usage Inference:** If 'usage' is not explicitly stated, infer it from context keywords (e.g., 'Bentgrass'/'Putting Green' -> '그린', 'Zoysia' -> '페어웨이'). Default to '그린' if unsure.
+                2. **Type Classification:** Match the product 'type' to one of the specific sub-category strings found in this JSON structure: ${groupsJSON}. If you cannot find a perfect match, use '기타'.
+                3. **Nutrients:** Ensure all nutrient values are numbers (percentages). If not found, use 0. Extract micronutrients and amino acid % carefully.
+                4. **Description:** Extract a concise but informative description (2-3 sentences) about what the product does.
                 5. Do NOT include any markdown formatting or explanations. Just the raw JSON.
                 
                 Input Data:
@@ -583,12 +607,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             setNewFertilizer(prev => ({
                 ...prev,
                 ...data,
-                // Ensure usage and type are valid enum values
+                // Ensure usage is valid
                 usage: ['그린', '티', '페어웨이'].includes(data.usage) ? data.usage : '그린',
-                type: ['완효성', '액상', '수용성', '4종복합비료', '기능성제제', '토양개량제'].includes(data.type) ? data.type : '완효성',
             }));
             
-            // Switch to form view implicitly by user seeing fields populated
         } catch (e) {
             console.error("AI Fill Error:", e);
             setAiError("분석에 실패했습니다. 올바른 데이터인지 확인해주세요.");
@@ -612,9 +634,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 const target = event.target as FileReader;
                 if (!target) return;
                 const data = target.result;
-                if (!data || typeof data === 'string') return; // Expecting ArrayBuffer for 'array' type read
+                if (!data) return; // Expecting ArrayBuffer for 'array' type read
                 
-                const wb = XLSX.read(data, { type: 'array' });
+                const wb = XLSX.read(data as any, { type: 'array' });
                 const wsname = wb.SheetNames[0];
                 if (!wsname) return;
                 const ws = wb.Sheets[wsname];
@@ -864,7 +886,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                                 <div className="flex justify-between items-center mb-4">
                                     <h3 className="font-bold text-slate-700">등록된 마스터 비료 목록 ({masterFertilizers.length})</h3>
                                     <button 
-                                        onClick={() => setIsAddFertilizerModalOpen(true)}
+                                        onClick={openAddModal}
                                         className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white text-sm font-bold rounded-md hover:bg-green-700 transition-colors"
                                     >
                                         <PlusIcon /> 새 비료 추가
@@ -873,9 +895,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                                 
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                     {masterFertilizers.map((f, idx) => (
-                                        <div key={`${f.name}-${idx}`} className="border rounded-lg p-4 hover:shadow-md transition-shadow relative group">
-                                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <button onClick={() => handleRemoveFertilizer(idx)} className="p-1 text-slate-400 hover:text-red-500 bg-white rounded-full shadow-sm border">
+                                        <div key={`${f.name}-${idx}`} className="border rounded-lg p-4 hover:shadow-md transition-shadow relative group bg-white">
+                                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                                                <button 
+                                                    onClick={() => openEditModal(idx, f)} 
+                                                    className="p-1 text-slate-400 hover:text-blue-500 bg-white rounded-full shadow-sm border"
+                                                    title="수정"
+                                                >
+                                                    <PencilIcon className="w-4 h-4" />
+                                                </button>
+                                                <button 
+                                                    onClick={() => handleRemoveFertilizer(idx)} 
+                                                    className="p-1 text-slate-400 hover:text-red-500 bg-white rounded-full shadow-sm border"
+                                                    title="삭제"
+                                                >
                                                     <TrashIcon />
                                                 </button>
                                             </div>
@@ -886,12 +919,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                                                     'bg-orange-100 text-orange-800'
                                                 }`}>{f.usage}</span>
                                                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{f.type}</span>
-                                                <h4 className="font-bold text-slate-800">{f.name}</h4>
+                                                <h4 className="font-bold text-slate-800 truncate flex-1" title={f.name}>{f.name}</h4>
                                             </div>
                                             <div className="text-xs text-slate-600 space-y-1">
-                                                <p>성분(NPK): {f.N}-{f.P}-{f.K}</p>
+                                                <p>성분(NPK): <span className="font-mono">{f.N}-{f.P}-{f.K}</span></p>
                                                 <p>포장: {f.unit} / 가격: {f.price.toLocaleString()}원</p>
                                                 <p>권장량: {f.rate}</p>
+                                                {f.description && <p className="text-slate-400 truncate border-t pt-1 mt-1">{f.description}</p>}
                                             </div>
                                         </div>
                                     ))}
@@ -910,83 +944,87 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 />
             )}
 
-            {/* Add Fertilizer Modal */}
+            {/* Add/Edit Fertilizer Modal */}
             {isAddFertilizerModalOpen && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4" onClick={() => setIsAddFertilizerModalOpen(false)}>
                     <div className="bg-white rounded-lg shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
                         <div className="p-4 border-b flex justify-between items-center bg-slate-50">
-                            <h3 className="font-bold text-slate-800">새 비료 추가</h3>
+                            <h3 className="font-bold text-slate-800">
+                                {editingFertilizerIndex !== null ? '비료 정보 수정' : '새 비료 추가'}
+                            </h3>
                             <button onClick={() => setIsAddFertilizerModalOpen(false)}><CloseIcon /></button>
                         </div>
                         
                         <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                            {/* AI Smart Input Section */}
-                            <div className="bg-purple-50 rounded-xl p-4 border border-purple-100">
-                                <h4 className="font-bold text-purple-900 flex items-center gap-2 mb-3 text-sm">
-                                    <SparklesIcon /> AI 스마트 입력
-                                </h4>
-                                <div className="flex gap-2 mb-3">
-                                    <button 
-                                        onClick={() => setAiSmartTab('text')}
-                                        className={`flex-1 py-2 text-xs font-bold rounded transition-colors ${aiSmartTab === 'text' ? 'bg-purple-600 text-white shadow' : 'bg-white text-purple-600 border border-purple-200'}`}
-                                    >
-                                        텍스트 직접 입력
-                                    </button>
-                                    <button 
-                                        onClick={() => setAiSmartTab('file')}
-                                        className={`flex-1 py-2 text-xs font-bold rounded transition-colors ${aiSmartTab === 'file' ? 'bg-purple-600 text-white shadow' : 'bg-white text-purple-600 border border-purple-200'}`}
-                                    >
-                                        파일 업로드 (이미지/엑셀/PDF)
-                                    </button>
-                                </div>
-
-                                {aiSmartTab === 'text' ? (
-                                    <div className="space-y-2">
-                                        <textarea
-                                            value={aiInputText}
-                                            onChange={e => setAiInputText(e.target.value)}
-                                            placeholder="제품 설명, 성분표 등을 복사해서 붙여넣으세요..."
-                                            className="w-full p-2 border border-purple-200 rounded text-sm h-24 focus:ring-2 focus:ring-purple-400 focus:outline-none"
-                                        />
+                            {/* AI Smart Input Section (Only for Adding) */}
+                            {editingFertilizerIndex === null && (
+                                <div className="bg-purple-50 rounded-xl p-4 border border-purple-100">
+                                    <h4 className="font-bold text-purple-900 flex items-center gap-2 mb-3 text-sm">
+                                        <SparklesIcon /> AI 스마트 입력
+                                    </h4>
+                                    <div className="flex gap-2 mb-3">
                                         <button 
-                                            onClick={handleAiSmartFillText}
-                                            disabled={isAiFillLoading || !aiInputText.trim()}
-                                            className="w-full py-2 bg-purple-600 text-white font-bold rounded text-xs hover:bg-purple-700 transition-colors disabled:opacity-50 flex justify-center items-center gap-2"
+                                            onClick={() => setAiSmartTab('text')}
+                                            className={`flex-1 py-2 text-xs font-bold rounded transition-colors ${aiSmartTab === 'text' ? 'bg-purple-600 text-white shadow' : 'bg-white text-purple-600 border border-purple-200'}`}
                                         >
-                                            {isAiFillLoading ? <div className="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full"></div> : <SparklesIcon />}
-                                            분석하여 자동 채우기
+                                            텍스트 직접 입력
+                                        </button>
+                                        <button 
+                                            onClick={() => setAiSmartTab('file')}
+                                            className={`flex-1 py-2 text-xs font-bold rounded transition-colors ${aiSmartTab === 'file' ? 'bg-purple-600 text-white shadow' : 'bg-white text-purple-600 border border-purple-200'}`}
+                                        >
+                                            파일 업로드 (이미지/엑셀/PDF)
                                         </button>
                                     </div>
-                                ) : (
-                                    <div className="space-y-2">
-                                        <div className="border-2 border-dashed border-purple-300 rounded-lg p-6 text-center bg-white hover:bg-purple-50 transition-colors relative">
-                                            <input 
-                                                type="file" 
-                                                onChange={handleAiSmartFillFile}
-                                                accept="image/*,.xlsx,.xls,.csv,.pdf"
-                                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                                disabled={isAiFillLoading}
+
+                                    {aiSmartTab === 'text' ? (
+                                        <div className="space-y-2">
+                                            <textarea
+                                                value={aiInputText}
+                                                onChange={e => setAiInputText(e.target.value)}
+                                                placeholder="제품 설명, 성분표 등을 복사해서 붙여넣으세요..."
+                                                className="w-full p-2 border border-purple-200 rounded text-sm h-24 focus:ring-2 focus:ring-purple-400 focus:outline-none"
                                             />
-                                            <div className="flex flex-col items-center justify-center pointer-events-none">
-                                                {isAiFillLoading ? (
-                                                    <div className="animate-spin h-8 w-8 border-4 border-purple-500 border-t-transparent rounded-full mb-2"></div>
-                                                ) : (
-                                                    <UploadIcon className="h-8 w-8 text-purple-400 mb-2" />
-                                                )}
-                                                <p className="text-xs font-bold text-purple-700">
-                                                    {isAiFillLoading ? '파일 분석 중...' : '클릭 또는 드래그하여 파일 업로드'}
-                                                </p>
-                                                <p className="text-[10px] text-purple-400 mt-1">
-                                                    지원: 이미지, Excel, PDF, CSV
-                                                </p>
+                                            <button 
+                                                onClick={handleAiSmartFillText}
+                                                disabled={isAiFillLoading || !aiInputText.trim()}
+                                                className="w-full py-2 bg-purple-600 text-white font-bold rounded text-xs hover:bg-purple-700 transition-colors disabled:opacity-50 flex justify-center items-center gap-2"
+                                            >
+                                                {isAiFillLoading ? <div className="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full"></div> : <SparklesIcon />}
+                                                분석하여 자동 채우기
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-2">
+                                            <div className="border-2 border-dashed border-purple-300 rounded-lg p-6 text-center bg-white hover:bg-purple-50 transition-colors relative">
+                                                <input 
+                                                    type="file" 
+                                                    onChange={handleAiSmartFillFile}
+                                                    accept="image/*,.xlsx,.xls,.csv,.pdf"
+                                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                                    disabled={isAiFillLoading}
+                                                />
+                                                <div className="flex flex-col items-center justify-center pointer-events-none">
+                                                    {isAiFillLoading ? (
+                                                        <div className="animate-spin h-8 w-8 border-4 border-purple-500 border-t-transparent rounded-full mb-2"></div>
+                                                    ) : (
+                                                        <UploadIcon className="h-8 w-8 text-purple-400 mb-2" />
+                                                    )}
+                                                    <p className="text-xs font-bold text-purple-700">
+                                                        {isAiFillLoading ? '파일 분석 중...' : '클릭 또는 드래그하여 파일 업로드'}
+                                                    </p>
+                                                    <p className="text-[10px] text-purple-400 mt-1">
+                                                        지원: 이미지, Excel, PDF, CSV
+                                                    </p>
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
-                                )}
-                                {aiError && (
-                                    <p className="text-xs text-red-500 mt-2 text-center">{aiError}</p>
-                                )}
-                            </div>
+                                    )}
+                                    {aiError && (
+                                        <p className="text-xs text-red-500 mt-2 text-center">{aiError}</p>
+                                    )}
+                                </div>
+                            )}
 
                             <div className="border-t pt-4">
                                 <h4 className="font-bold text-slate-700 mb-3 text-sm">상세 정보 입력</h4>
@@ -995,6 +1033,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                                         <label className="block text-xs font-bold text-slate-600 mb-1">제품명</label>
                                         <input type="text" className="w-full border p-2 rounded" value={newFertilizer.name || ''} onChange={e => setNewFertilizer({...newFertilizer, name: e.target.value})} placeholder="예: HPG-Special" />
                                     </div>
+                                    
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-600 mb-1">상세 설명</label>
+                                        <textarea 
+                                            className="w-full border p-2 rounded text-sm" 
+                                            rows={3}
+                                            value={newFertilizer.description || ''} 
+                                            onChange={e => setNewFertilizer({...newFertilizer, description: e.target.value})} 
+                                            placeholder="제품의 특징이나 상세 설명을 입력하세요." 
+                                        />
+                                    </div>
+
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
                                             <label className="block text-xs font-bold text-slate-600 mb-1">용도</label>
@@ -1006,13 +1056,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                                         </div>
                                         <div>
                                             <label className="block text-xs font-bold text-slate-600 mb-1">타입</label>
-                                            <select className="w-full border p-2 rounded" value={newFertilizer.type} onChange={e => setNewFertilizer({...newFertilizer, type: e.target.value as any})}>
-                                                <option value="완효성">완효성</option>
-                                                <option value="액상">액상</option>
-                                                <option value="수용성">수용성</option>
-                                                <option value="4종복합비료">4종복합</option>
-                                                <option value="기능성제제">기능성제제</option>
-                                                <option value="토양개량제">토양개량제</option>
+                                            <select 
+                                                className="w-full border p-2 rounded" 
+                                                value={newFertilizer.type} 
+                                                onChange={e => setNewFertilizer({...newFertilizer, type: e.target.value as any})}
+                                            >
+                                                {Object.entries(FERTILIZER_TYPE_GROUPS).map(([group, types]) => (
+                                                    <optgroup label={group} key={group}>
+                                                        {types.map(t => (
+                                                            <option key={t} value={t}>{t}</option>
+                                                        ))}
+                                                    </optgroup>
+                                                ))}
+                                                <optgroup label="기타">
+                                                    <option value="기타">기타</option>
+                                                </optgroup>
                                             </select>
                                         </div>
                                     </div>
@@ -1062,7 +1120,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                                         <label className="block text-xs font-bold text-slate-600 mb-1">권장사용량</label>
                                         <input type="text" className="w-full border p-2 rounded" value={newFertilizer.rate || ''} onChange={e => setNewFertilizer({...newFertilizer, rate: e.target.value})} placeholder="예: 20g/㎡" />
                                     </div>
-                                    <button onClick={handleAddFertilizer} className="w-full bg-blue-600 text-white font-bold py-3 rounded hover:bg-blue-700 shadow-md">추가하기</button>
+                                    <button 
+                                        onClick={handleSaveFertilizer} 
+                                        className="w-full bg-blue-600 text-white font-bold py-3 rounded hover:bg-blue-700 shadow-md transition-colors"
+                                    >
+                                        {editingFertilizerIndex !== null ? '수정 내용 저장' : '비료 추가하기'}
+                                    </button>
                                 </div>
                             </div>
                         </div>
