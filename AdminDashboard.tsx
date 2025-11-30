@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import * as api from './api';
 import * as XLSX from 'xlsx';
@@ -63,6 +64,7 @@ const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'
 
 const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose }) => {
     const [statsView, setStatsView] = useState<'monthly' | 'daily' | 'yearly'>('monthly');
+    const [selectedYear, setSelectedYear] = useState<string>('all');
 
     // 1. Calculate Product Statistics (Most used, Cost share, Quantity)
     const productStats = useMemo(() => {
@@ -102,8 +104,12 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose }) 
         const daily: Record<string, number> = {};
 
         userData.logs.forEach(log => {
+            // Apply Year Filter if selected
             const date = new Date(log.date);
             const y = date.getFullYear().toString();
+            
+            if (selectedYear !== 'all' && y !== selectedYear) return;
+
             const m = `${y}-${String(date.getMonth() + 1).padStart(2, '0')}`;
             const d = log.date; // YYYY-MM-DD
 
@@ -118,6 +124,37 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose }) 
         const dailyArr = Object.entries(daily).map(([k, v]) => ({ period: k, cost: v })).sort((a, b) => a.period.localeCompare(b.period)); // Sort daily ascending for chart
 
         return { monthly: monthlyArr, yearly: yearlyArr, daily: dailyArr };
+    }, [userData.logs, selectedYear]);
+
+    // 3. Annual Usage Stats (New Feature for Growth Pattern)
+    const annualUsageStats = useMemo(() => {
+        const stats: Record<string, { totalAmount: number, unit: string, cost: number, count: number }> = {};
+        
+        userData.logs.forEach(log => {
+            const date = new Date(log.date);
+            const y = date.getFullYear().toString();
+            
+            if (selectedYear !== 'all' && y !== selectedYear) return;
+
+            if (!stats[log.product]) {
+                const unit = log.applicationUnit.includes('ml') ? 'L' : 'kg';
+                stats[log.product] = { totalAmount: 0, unit, cost: 0, count: 0 };
+            }
+            
+            const amount = (log.area * log.applicationRate) / 1000;
+            stats[log.product].totalAmount += amount;
+            stats[log.product].cost += log.totalCost;
+            stats[log.product].count += 1;
+        });
+
+        return Object.entries(stats)
+            .map(([name, data]) => ({ name, ...data }))
+            .sort((a, b) => b.totalAmount - a.totalAmount);
+    }, [userData.logs, selectedYear]);
+
+    const availableYears = useMemo(() => {
+        const years = new Set(userData.logs.map(l => new Date(l.date).getFullYear().toString()));
+        return Array.from(years).sort().reverse();
     }, [userData.logs]);
 
     const formatXAxis = (tickItem: string) => {
@@ -178,16 +215,26 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose }) 
                         <div className="bg-white p-4 rounded-lg border shadow-sm flex flex-col">
                             <div className="flex justify-between items-center mb-4">
                                 <h3 className="font-bold text-slate-700">📊 기간별 비용 추이</h3>
-                                <div className="flex bg-slate-100 rounded p-1">
-                                    {(['daily', 'monthly', 'yearly'] as const).map(view => (
-                                        <button
-                                            key={view}
-                                            onClick={() => setStatsView(view)}
-                                            className={`px-3 py-1 text-xs font-bold rounded transition-colors ${statsView === view ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                                        >
-                                            {view === 'daily' ? '일별' : view === 'monthly' ? '월별' : '연간'}
-                                        </button>
-                                    ))}
+                                <div className="flex gap-2">
+                                    <select 
+                                        value={selectedYear} 
+                                        onChange={(e) => setSelectedYear(e.target.value)}
+                                        className="text-xs p-1 border rounded bg-slate-50"
+                                    >
+                                        <option value="all">전체 연도</option>
+                                        {availableYears.map(y => <option key={y} value={y}>{y}년</option>)}
+                                    </select>
+                                    <div className="flex bg-slate-100 rounded p-1">
+                                        {(['daily', 'monthly', 'yearly'] as const).map(view => (
+                                            <button
+                                                key={view}
+                                                onClick={() => setStatsView(view)}
+                                                className={`px-3 py-1 text-xs font-bold rounded transition-colors ${statsView === view ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                            >
+                                                {view === 'daily' ? '일별' : view === 'monthly' ? '월별' : '연간'}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
                             </div>
                             <div className="h-64">
@@ -234,65 +281,38 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose }) 
                         </div>
                     </div>
 
-                    {/* Product Usage Detail Table */}
+                    {/* NEW SECTION: Annual Total Fertilizer Usage */}
                     <div className="bg-white border rounded-lg overflow-hidden">
-                        <div className="p-4 bg-slate-50 border-b">
-                            <h3 className="font-bold text-slate-700">📦 제품별 상세 사용 내역</h3>
+                        <div className="p-4 bg-slate-50 border-b flex justify-between items-center">
+                            <h3 className="font-bold text-slate-700">📅 연간 비료 총 사용량 및 생육 자재 투입 현황</h3>
+                            <span className="text-xs text-slate-500 bg-white px-2 py-1 rounded border">
+                                {selectedYear === 'all' ? '전체 기간' : `${selectedYear}년도 데이터`}
+                            </span>
                         </div>
-                        <div className="max-h-64 overflow-y-auto">
+                        <div className="max-h-80 overflow-y-auto">
                             <table className="w-full text-sm text-left">
                                 <thead className="bg-slate-100 text-slate-600 sticky top-0 z-10">
                                     <tr>
                                         <th className="p-3">제품명</th>
+                                        <th className="p-3 text-right">총 사용량 (kg/L)</th>
                                         <th className="p-3 text-right">사용 횟수</th>
-                                        <th className="p-3 text-right">총 사용량 (추정)</th>
                                         <th className="p-3 text-right">총 비용</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
-                                    {productStats.length > 0 ? (
-                                        productStats.map((item, idx) => (
+                                    {annualUsageStats.length > 0 ? (
+                                        annualUsageStats.map((item, idx) => (
                                             <tr key={idx} className="hover:bg-slate-50">
                                                 <td className="p-3 text-slate-700 font-medium">{item.name}</td>
-                                                <td className="p-3 text-right text-slate-600">{item.count}회</td>
-                                                <td className="p-3 text-right text-slate-600">
-                                                    {item.totalAmount.toFixed(1)} <span className="text-xs text-slate-400">{item.unitHint}</span>
+                                                <td className="p-3 text-right font-bold text-blue-800">
+                                                    {item.totalAmount.toFixed(1)} <span className="text-xs font-normal text-slate-500">{item.unit}</span>
                                                 </td>
-                                                <td className="p-3 text-right font-mono font-bold text-slate-800">{Math.round(item.totalCost).toLocaleString()}원</td>
+                                                <td className="p-3 text-right text-slate-600">{item.count}회</td>
+                                                <td className="p-3 text-right font-mono text-slate-800">{Math.round(item.cost).toLocaleString()}원</td>
                                             </tr>
                                         ))
                                     ) : (
-                                        <tr><td colSpan={4} className="p-6 text-center text-slate-400">데이터가 없습니다.</td></tr>
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-
-                    {/* Period Data Table */}
-                    <div className="bg-white border rounded-lg overflow-hidden">
-                         <div className="p-4 bg-slate-50 border-b">
-                            <h3 className="font-bold text-slate-700">📅 기간별 비용 내역 ({statsView === 'daily' ? '일별' : statsView === 'monthly' ? '월별' : '연간'})</h3>
-                        </div>
-                        <div className="max-h-64 overflow-y-auto">
-                            <table className="w-full text-sm text-left">
-                                <thead className="bg-slate-100 text-slate-600 sticky top-0 z-10">
-                                    <tr>
-                                        <th className="p-3">기간</th>
-                                        <th className="p-3 text-right">비용</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {timeStats[statsView].length > 0 ? (
-                                        // Sort desc for table (newest first)
-                                        [...timeStats[statsView]].sort((a,b) => b.period.localeCompare(a.period)).map((item, idx) => (
-                                            <tr key={idx} className="hover:bg-slate-50">
-                                                <td className="p-3 text-slate-700">{item.period}</td>
-                                                <td className="p-3 text-right font-mono font-medium text-slate-900">{Math.round(item.cost).toLocaleString()}원</td>
-                                            </tr>
-                                        ))
-                                    ) : (
-                                        <tr><td colSpan={2} className="p-6 text-center text-slate-400">데이터가 없습니다.</td></tr>
+                                        <tr><td colSpan={4} className="p-6 text-center text-slate-400">해당 연도의 데이터가 없습니다.</td></tr>
                                     )}
                                 </tbody>
                             </table>
@@ -335,6 +355,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
     const [isAiFillLoading, setIsAiFillLoading] = useState(false);
     const [aiSmartTab, setAiSmartTab] = useState<'text' | 'file'>('text');
     const [aiError, setAiError] = useState<string | null>(null);
+    const [autoSaveAfterAi, setAutoSaveAfterAi] = useState(false);
 
     useEffect(() => {
         loadData();
@@ -494,42 +515,46 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         setIsAddFertilizerModalOpen(true);
     };
 
-    const handleSaveFertilizer = async () => {
-        if (!newFertilizer.name || !newFertilizer.unit || !newFertilizer.rate) {
-            alert('필수 정보를 모두 입력해주세요.');
+    const handleSaveFertilizer = async (dataOverride?: Partial<Fertilizer>) => {
+        // Use override data if provided (for auto-save), otherwise use state
+        const dataToSave = dataOverride || newFertilizer;
+
+        if (!dataToSave.name || !dataToSave.unit || !dataToSave.rate) {
+            // Only alert if manual save, skip if automated call might be incomplete
+            if (!dataOverride) alert('필수 정보를 모두 입력해주세요.');
             return;
         }
 
         const fertilizerData: Fertilizer = {
-            name: newFertilizer.name,
-            usage: newFertilizer.usage as '그린' | '티' | '페어웨이',
-            type: newFertilizer.type as any,
-            N: Number(newFertilizer.N || 0),
-            P: Number(newFertilizer.P || 0),
-            K: Number(newFertilizer.K || 0),
-            Ca: Number(newFertilizer.Ca || 0),
-            Mg: Number(newFertilizer.Mg || 0),
-            S: Number(newFertilizer.S || 0),
-            Fe: Number(newFertilizer.Fe || 0),
-            Mn: Number(newFertilizer.Mn || 0),
-            Zn: Number(newFertilizer.Zn || 0),
-            Cu: Number(newFertilizer.Cu || 0),
-            B: Number(newFertilizer.B || 0),
-            Mo: Number(newFertilizer.Mo || 0),
-            Cl: Number(newFertilizer.Cl || 0),
-            Na: Number(newFertilizer.Na || 0),
-            Si: Number(newFertilizer.Si || 0),
-            Ni: Number(newFertilizer.Ni || 0),
-            Co: Number(newFertilizer.Co || 0),
-            V: Number(newFertilizer.V || 0),
-            aminoAcid: Number(newFertilizer.aminoAcid || 0),
-            price: Number(newFertilizer.price || 0),
-            unit: newFertilizer.unit,
-            rate: newFertilizer.rate,
-            stock: newFertilizer.stock || 0,
-            imageUrl: newFertilizer.imageUrl || '',
-            lowStockAlertEnabled: newFertilizer.lowStockAlertEnabled || false,
-            description: newFertilizer.description || '',
+            name: dataToSave.name || '',
+            usage: (dataToSave.usage || '그린') as '그린' | '티' | '페어웨이',
+            type: (dataToSave.type || '완효성') as string,
+            N: Number(dataToSave.N || 0),
+            P: Number(dataToSave.P || 0),
+            K: Number(dataToSave.K || 0),
+            Ca: Number(dataToSave.Ca || 0),
+            Mg: Number(dataToSave.Mg || 0),
+            S: Number(dataToSave.S || 0),
+            Fe: Number(dataToSave.Fe || 0),
+            Mn: Number(dataToSave.Mn || 0),
+            Zn: Number(dataToSave.Zn || 0),
+            Cu: Number(dataToSave.Cu || 0),
+            B: Number(dataToSave.B || 0),
+            Mo: Number(dataToSave.Mo || 0),
+            Cl: Number(dataToSave.Cl || 0),
+            Na: Number(dataToSave.Na || 0),
+            Si: Number(dataToSave.Si || 0),
+            Ni: Number(dataToSave.Ni || 0),
+            Co: Number(dataToSave.Co || 0),
+            V: Number(dataToSave.V || 0),
+            aminoAcid: Number(dataToSave.aminoAcid || 0),
+            price: Number(dataToSave.price || 0),
+            unit: dataToSave.unit || '',
+            rate: dataToSave.rate || '',
+            stock: dataToSave.stock || 0,
+            imageUrl: dataToSave.imageUrl || '',
+            lowStockAlertEnabled: dataToSave.lowStockAlertEnabled || false,
+            description: dataToSave.description || '',
         };
 
         const newList = [...masterFertilizers];
@@ -544,6 +569,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         setIsAddFertilizerModalOpen(false);
         setNewFertilizer({ type: '완효성', usage: '그린' });
         setEditingFertilizerIndex(null);
+        if (dataOverride) {
+            alert('AI 분석 결과가 자동으로 저장되었습니다.');
+        }
     };
 
     // --- AI Smart Fill Logic ---
@@ -552,7 +580,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         setIsAiFillLoading(true);
         setAiError(null);
         try {
-            const ai = new GoogleGenAI({ apiKey: (process.env.API_KEY as string) });
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
             const groupsJSON = JSON.stringify(FERTILIZER_TYPE_GROUPS);
             
             const prompt = `
@@ -561,11 +589,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 {
                     "name": "Product Name",
                     "usage": "One of ['그린', '티', '페어웨이']",
-                    "type": "Most appropriate specific subtype string from the list provided below",
+                    "type": "The exact sub-category string found in this hierarchy: ${groupsJSON}. If no perfect match, use '기타'.",
                     "unit": "Packaging Unit (e.g., '20kg', '10L')",
                     "price": Number (approximate or 0 if unknown),
                     "rate": "Recommended Rate (e.g., '20g/㎡')",
-                    "description": "A summary of the product features, effects, or marketing description in Korean",
+                    "description": "A detailed description of the product features, active ingredients, and effects in Korean",
                     "N": Number (Percentage),
                     "P": Number (Percentage),
                     "K": Number (Percentage),
@@ -577,9 +605,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 
                 Important Rules:
                 1. **Usage Inference:** If 'usage' is not explicitly stated, infer it from context keywords (e.g., 'Bentgrass'/'Putting Green' -> '그린', 'Zoysia' -> '페어웨이'). Default to '그린' if unsure.
-                2. **Type Classification:** Match the product 'type' to one of the specific sub-category strings found in this JSON structure: ${groupsJSON}. If you cannot find a perfect match, use '기타'.
-                3. **Nutrients:** Ensure all nutrient values are numbers (percentages). If not found, use 0. Extract micronutrients and amino acid % carefully.
-                4. **Description:** Extract a concise but informative description (2-3 sentences) about what the product does.
+                2. **Type Matching:** You MUST choose the "type" field from the specific strings in the provided JSON hierarchy (e.g., "N-P-K 균형 비료", "토양 개량제 (Ca/Mg/S)"). Do NOT make up new types.
+                3. **Description:** Extract a good summary (2-3 sentences) for the description field.
+                4. Ensure all nutrient values are numbers (percentages). If not found, use 0. Extract micronutrients and amino acid % carefully.
                 5. Do NOT include any markdown formatting or explanations. Just the raw JSON.
                 
                 Input Data:
@@ -604,12 +632,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             text = text.replace(/```json/g, '').replace(/```/g, '').trim();
             const data = JSON.parse(text);
 
-            setNewFertilizer(prev => ({
-                ...prev,
+            const parsedData = {
+                ...newFertilizer,
                 ...data,
                 // Ensure usage is valid
                 usage: ['그린', '티', '페어웨이'].includes(data.usage) ? data.usage : '그린',
-            }));
+                // Keep type as string, validation happens via UI selection mostly
+            };
+
+            setNewFertilizer(parsedData);
+            
+            // Auto Save Logic
+            if (autoSaveAfterAi) {
+                // Must call save with the parsed data directly, as state update is async
+                await handleSaveFertilizer(parsedData);
+            }
             
         } catch (e) {
             console.error("AI Fill Error:", e);
@@ -630,13 +667,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
 
         if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.name.endsWith('.csv')) {
             const reader = new FileReader();
-            reader.onload = async (event: ProgressEvent<FileReader>) => {
-                const target = event.target as FileReader;
+            reader.onload = async (event: any) => {
+                const target = event.target;
                 if (!target) return;
                 const data = target.result;
-                if (!data) return; // Expecting ArrayBuffer for 'array' type read
+                if (!data || typeof data === 'string') return; // Expecting ArrayBuffer for 'array' type read
                 
-                const wb = XLSX.read(data as any, { type: 'array' });
+                const wb = XLSX.read(data, { type: 'array' });
                 const wsname = wb.SheetNames[0];
                 if (!wsname) return;
                 const ws = wb.Sheets[wsname];
@@ -646,8 +683,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             reader.readAsArrayBuffer(file);
         } else if (file.type.startsWith('image/') || file.type === 'application/pdf') {
             const reader = new FileReader();
-            reader.onloadend = async (event: ProgressEvent<FileReader>) => {
-                const target = event.target as FileReader;
+            reader.onloadend = async (event: any) => {
+                const target = event.target;
                 if (!target) return;
                 const result = target.result;
                 if (typeof result !== 'string') return;
@@ -666,8 +703,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         } else {
              // Treat as text file
             const reader = new FileReader();
-            reader.onload = async (event: ProgressEvent<FileReader>) => {
-                const target = event.target as FileReader;
+            reader.onload = async (event: any) => {
+                const target = event.target;
                 if (!target) return;
                 const text = target.result;
                 if (typeof text !== 'string') return;
@@ -918,7 +955,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                                                     f.usage === '티' ? 'bg-blue-100 text-blue-800' :
                                                     'bg-orange-100 text-orange-800'
                                                 }`}>{f.usage}</span>
-                                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{f.type}</span>
+                                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 truncate max-w-[100px]">{f.type}</span>
                                                 <h4 className="font-bold text-slate-800 truncate flex-1" title={f.name}>{f.name}</h4>
                                             </div>
                                             <div className="text-xs text-slate-600 space-y-1">
@@ -959,9 +996,20 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                             {/* AI Smart Input Section (Only for Adding) */}
                             {editingFertilizerIndex === null && (
                                 <div className="bg-purple-50 rounded-xl p-4 border border-purple-100">
-                                    <h4 className="font-bold text-purple-900 flex items-center gap-2 mb-3 text-sm">
-                                        <SparklesIcon /> AI 스마트 입력
-                                    </h4>
+                                    <div className="flex justify-between items-center mb-3">
+                                        <h4 className="font-bold text-purple-900 flex items-center gap-2 text-sm">
+                                            <SparklesIcon /> AI 스마트 입력
+                                        </h4>
+                                        <label className="flex items-center gap-2 text-xs font-bold text-purple-800 cursor-pointer">
+                                            <input 
+                                                type="checkbox" 
+                                                checked={autoSaveAfterAi} 
+                                                onChange={(e) => setAutoSaveAfterAi(e.target.checked)}
+                                                className="rounded text-purple-600 focus:ring-purple-500"
+                                            />
+                                            분석 후 자동 저장
+                                        </label>
+                                    </div>
                                     <div className="flex gap-2 mb-3">
                                         <button 
                                             onClick={() => setAiSmartTab('text')}
@@ -991,7 +1039,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                                                 className="w-full py-2 bg-purple-600 text-white font-bold rounded text-xs hover:bg-purple-700 transition-colors disabled:opacity-50 flex justify-center items-center gap-2"
                                             >
                                                 {isAiFillLoading ? <div className="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full"></div> : <SparklesIcon />}
-                                                분석하여 자동 채우기
+                                                분석하여 {autoSaveAfterAi ? '자동 저장' : '자동 채우기'}
                                             </button>
                                         </div>
                                     ) : (
@@ -1061,6 +1109,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                                                 value={newFertilizer.type} 
                                                 onChange={e => setNewFertilizer({...newFertilizer, type: e.target.value as any})}
                                             >
+                                                <option value="">타입 선택</option>
                                                 {Object.entries(FERTILIZER_TYPE_GROUPS).map(([group, types]) => (
                                                     <optgroup label={group} key={group}>
                                                         {types.map(t => (
@@ -1068,7 +1117,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                                                         ))}
                                                     </optgroup>
                                                 ))}
-                                                <optgroup label="기타">
+                                                <optgroup label="기타/기존">
+                                                    <option value="완효성">완효성</option>
+                                                    <option value="액상">액상</option>
+                                                    <option value="수용성">수용성</option>
+                                                    <option value="4종복합비료">4종복합</option>
+                                                    <option value="기능성제제">기능성제제</option>
+                                                    <option value="토양개량제">토양개량제</option>
                                                     <option value="기타">기타</option>
                                                 </optgroup>
                                             </select>
@@ -1121,7 +1176,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                                         <input type="text" className="w-full border p-2 rounded" value={newFertilizer.rate || ''} onChange={e => setNewFertilizer({...newFertilizer, rate: e.target.value})} placeholder="예: 20g/㎡" />
                                     </div>
                                     <button 
-                                        onClick={handleSaveFertilizer} 
+                                        onClick={() => handleSaveFertilizer()} 
                                         className="w-full bg-blue-600 text-white font-bold py-3 rounded hover:bg-blue-700 shadow-md transition-colors"
                                     >
                                         {editingFertilizerIndex !== null ? '수정 내용 저장' : '비료 추가하기'}
