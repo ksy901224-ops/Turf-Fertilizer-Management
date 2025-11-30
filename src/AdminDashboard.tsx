@@ -1,11 +1,11 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import * as api from './api';
 import * as XLSX from 'xlsx';
 import { GoogleGenAI } from '@google/genai';
 import { UserDataSummary, Fertilizer, LogEntry } from './types';
-import { LogoutIcon, DashboardIcon, UsersIcon, PlusIcon, TrashIcon, CloseIcon, ClipboardListIcon, CameraIcon, DocumentSearchIcon, UploadIcon, SparklesIcon, DownloadIcon, PencilIcon } from './icons';
+import { LogoutIcon, DashboardIcon, UsersIcon, PlusIcon, TrashIcon, CloseIcon, ClipboardListIcon, CameraIcon, DocumentSearchIcon, UploadIcon, SparklesIcon, DownloadIcon } from './icons';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { FERTILIZER_TYPE_GROUPS } from './constants';
 
 interface AdminDashboardProps {
     user: string;
@@ -317,9 +317,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
     // User Detail Modal State
     const [selectedUserForDetail, setSelectedUserForDetail] = useState<UserDataSummary | null>(null);
     
-    // Fertilizer Form State (Add / Edit)
+    // New Fertilizer Form State
     const [isAddFertilizerModalOpen, setIsAddFertilizerModalOpen] = useState(false);
-    const [editingFertilizerIndex, setEditingFertilizerIndex] = useState<number | null>(null);
     const [newFertilizer, setNewFertilizer] = useState<Partial<Fertilizer>>({
         type: '완효성',
         usage: '그린'
@@ -407,6 +406,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
     const handleApproveUser = async (username: string) => {
         if (window.confirm(`${username} 님의 가입을 승인하시겠습니까?`)) {
             await api.approveUser(username);
+            // Clear from selection if present
             setSelectedPendingUsers(prev => {
                 const next = new Set(prev);
                 next.delete(username);
@@ -419,6 +419,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
     const handleDeleteUser = async (username: string) => {
         if (window.confirm(`${username} 님을 삭제(거절)하시겠습니까? 관련된 모든 데이터가 삭제됩니다.`)) {
             await api.deleteUser(username);
+            // Clear from selection if present
             setSelectedPendingUsers(prev => {
                 const next = new Set(prev);
                 next.delete(username);
@@ -480,25 +481,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         }
     };
 
-    const handleEditFertilizer = (index: number) => {
-        setEditingFertilizerIndex(index);
-        setNewFertilizer({ ...masterFertilizers[index] });
-        setIsAddFertilizerModalOpen(true);
-    };
-
-    const openAddFertilizerModal = () => {
-        setEditingFertilizerIndex(null);
-        setNewFertilizer({ type: '완효성', usage: '그린' });
-        setIsAddFertilizerModalOpen(true);
-    };
-
-    const handleSaveFertilizer = async () => {
+    const handleAddFertilizer = async () => {
         if (!newFertilizer.name || !newFertilizer.unit || !newFertilizer.rate) {
             alert('필수 정보를 모두 입력해주세요.');
             return;
         }
 
-        const fertilizerData: Fertilizer = {
+        const fertilizerToAdd: Fertilizer = {
             name: newFertilizer.name,
             usage: newFertilizer.usage as '그린' | '티' | '페어웨이',
             type: newFertilizer.type as any,
@@ -524,27 +513,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             price: Number(newFertilizer.price || 0),
             unit: newFertilizer.unit,
             rate: newFertilizer.rate,
-            // Use existing values from newFertilizer state (populated on edit) or default for new
-            stock: newFertilizer.stock ?? 0,
-            imageUrl: newFertilizer.imageUrl ?? '',
-            lowStockAlertEnabled: newFertilizer.lowStockAlertEnabled ?? false,
-            description: newFertilizer.description || '', 
+            stock: 0,
+            imageUrl: '',
+            lowStockAlertEnabled: false,
         };
 
-        const newList = [...masterFertilizers];
-        if (editingFertilizerIndex !== null) {
-            // Update existing
-            newList[editingFertilizerIndex] = fertilizerData;
-        } else {
-            // Add new
-            newList.push(fertilizerData);
-        }
-
+        const newList = [...masterFertilizers, fertilizerToAdd];
         await api.saveFertilizers('admin', newList);
         setMasterFertilizers(newList);
         setIsAddFertilizerModalOpen(false);
         setNewFertilizer({ type: '완효성', usage: '그린' });
-        setEditingFertilizerIndex(null);
     };
 
     // --- AI Smart Fill Logic ---
@@ -553,28 +531,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         setIsAiFillLoading(true);
         setAiError(null);
         try {
-            const apiKey = process.env.API_KEY;
-            if (!apiKey) {
-                throw new Error("API Key is missing in environment variables.");
-            }
-            const ai = new GoogleGenAI({ apiKey });
-
-            // Dynamically construct taxonomy string from constants
-            const TYPE_TAXONOMY = Object.entries(FERTILIZER_TYPE_GROUPS)
-                .map(([group, types]) => `- ${group}: ${(types as string[]).join(', ')}`)
-                .join('\n');
-
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
             const prompt = `
                 Analyze the provided fertilizer information (Text, Image, Excel, PDF, or CSV).
                 Extract the following details and return ONLY a JSON object:
                 {
                     "name": "Product Name",
                     "usage": "One of ['그린', '티', '페어웨이']",
-                    "type": "Specific type string based on the taxonomy below.",
-                    "unit": "Packaging Unit (e.g., '20kg', '10L')",
+                    "type": "One of ['완효성', '액상', '수용성', '4종복합비료', '기능성제제', '토양개량제']",
+                    "unit": "Packaging Unit (e.g., '20kg')",
                     "price": Number (approximate or 0 if unknown),
                     "rate": "Recommended Rate (e.g., '20g/㎡')",
-                    "description": "A detailed product description, marketing summary, key features, and benefits in Korean.",
                     "N": Number (Percentage),
                     "P": Number (Percentage),
                     "K": Number (Percentage),
@@ -585,43 +552,43 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 }
                 
                 Important Rules:
-                1. If 'usage' is unknown or ambiguous, infer it from the context (e.g., 'fine turf', 'bentgrass' implies '그린'; 'sports field', 'bluegrass' implies '페어웨이'). If completely unknown, default to '그린'.
-                2. Map 'type' to one of the specific sub-categories in the following taxonomy if possible. If no exact match, use the closest fit or the generic group name.
-                
-                Taxonomy for 'type' field:
-                ${TYPE_TAXONOMY}
-
+                1. If 'usage' is unknown or ambiguous, infer it from the context (e.g., 'fine turf' implies '그린', 'sports field' implies '페어웨이'). If completely unknown, default to '그린'.
+                2. If 'type' is unknown, infer it. 'Soil conditioner' -> '토양개량제', 'Functional' -> '기능성제제'. Default to '완효성'.
                 3. Extract amino acid percentage if mentioned (e.g., "Amino Acid 10%" -> 10).
-                4. Extract a RICH and DETAILED product description into the 'description' field. Summarize key selling points, effects (e.g., root growth, stress recovery), and instructions if available. Translate to Korean if necessary.
-                5. Ensure all nutrient values are numbers (percentages). If not found, use 0.
-                6. Do NOT include any markdown formatting or explanations. Just the raw JSON.
+                4. Ensure all nutrient values are numbers (percentages). If not found, use 0.
+                5. Do NOT include any markdown formatting or explanations. Just the raw JSON.
                 
                 Input Data:
                 ${promptText}
             `;
 
-            const parts: any[] = [{ text: prompt }];
-            if (inlineDataParts && inlineDataParts.length > 0) {
-                parts.push(...inlineDataParts);
-            }
-
             const response = await ai.models.generateContent({
                 model: 'gemini-2.5-flash',
-                contents: { parts: parts }
+                contents: {
+                    parts: [
+                        { text: prompt },
+                        ...inlineDataParts
+                    ]
+                }
             });
 
             let text = response.text;
-            if (!text) throw new Error("AI response text is empty or invalid.");
+            if (!text) {
+                throw new Error("AI response text is empty or invalid.");
+            }
+            // Clean up code blocks if present
             text = text.replace(/```json/g, '').replace(/```/g, '').trim();
             const data = JSON.parse(text);
 
             setNewFertilizer(prev => ({
                 ...prev,
                 ...data,
-                // Ensure usage is valid
+                // Ensure usage and type are valid enum values
                 usage: ['그린', '티', '페어웨이'].includes(data.usage) ? data.usage : '그린',
+                type: ['완효성', '액상', '수용성', '4종복합비료', '기능성제제', '토양개량제'].includes(data.type) ? data.type : '완효성',
             }));
             
+            // Switch to form view implicitly by user seeing fields populated
         } catch (e) {
             console.error("AI Fill Error:", e);
             setAiError("분석에 실패했습니다. 올바른 데이터인지 확인해주세요.");
@@ -636,7 +603,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
     };
 
     const handleAiSmartFillFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0] as File;
+        const file = e.target.files?.[0];
         if (!file) return;
 
         if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.name.endsWith('.csv')) {
@@ -644,25 +611,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             reader.onload = async (event: ProgressEvent<FileReader>) => {
                 const target = event.target as FileReader;
                 if (!target) return;
-                const data = target.result as ArrayBuffer;
-                if (!data || typeof data === 'string') return; 
+                const data = target.result;
+                if (!data || typeof data === 'string') return; // Expecting ArrayBuffer for 'array' type read
                 
                 const wb = XLSX.read(data, { type: 'array' });
                 const wsname = wb.SheetNames[0];
                 if (!wsname) return;
-                const ws = wb.Sheets[wsname] as XLSX.WorkSheet;
-                // Force string conversion for CSV data to ensure it's not unknown/any
-                const csvData = String(XLSX.utils.sheet_to_csv(ws) as any);
+                const ws = wb.Sheets[wsname];
+                const csvData = XLSX.utils.sheet_to_csv(ws);
                 await processAiRequest(`Extracted Spreadsheet Data:\n${csvData}`);
             };
-            reader.readAsArrayBuffer(file as Blob);
+            reader.readAsArrayBuffer(file);
         } else if (file.type.startsWith('image/') || file.type === 'application/pdf') {
             const reader = new FileReader();
             reader.onloadend = async (event: ProgressEvent<FileReader>) => {
                 const target = event.target as FileReader;
                 if (!target) return;
-                const result = target.result as string;
-                // Explicit check for string type
+                const result = target.result;
                 if (typeof result !== 'string') return;
                 
                 const base64Data = result.split(',')[1];
@@ -675,7 +640,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                     }
                 }]);
             };
-            reader.readAsDataURL(file as Blob);
+            reader.readAsDataURL(file);
         } else {
              // Treat as text file
             const reader = new FileReader();
@@ -686,7 +651,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 if (typeof text !== 'string') return;
                 await processAiRequest(`File Content:\n${text}`);
             }
-            reader.readAsText(file as Blob);
+            reader.readAsText(file);
         }
     };
 
@@ -909,28 +874,24 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                     {masterFertilizers.map((f, idx) => (
                                         <div key={`${f.name}-${idx}`} className="border rounded-lg p-4 hover:shadow-md transition-shadow relative group">
-                                            <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <button onClick={() => handleEditFertilizer(idx)} className="p-1.5 text-slate-400 hover:text-blue-500 bg-white rounded-full shadow-sm border" title="수정">
-                                                    <PencilIcon className="h-4 w-4" />
-                                                </button>
-                                                <button onClick={() => handleRemoveFertilizer(idx)} className="p-1.5 text-slate-400 hover:text-red-500 bg-white rounded-full shadow-sm border" title="삭제">
-                                                    <TrashIcon className="h-4 w-4" />
+                                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <button onClick={() => handleRemoveFertilizer(idx)} className="p-1 text-slate-400 hover:text-red-500 bg-white rounded-full shadow-sm border">
+                                                    <TrashIcon />
                                                 </button>
                                             </div>
-                                            <div className="flex items-center gap-2 mb-2 pr-12">
+                                            <div className="flex items-center gap-2 mb-2">
                                                 <span className={`text-[10px] px-2 py-0.5 rounded-full ${
                                                     f.usage === '그린' ? 'bg-green-100 text-green-800' :
                                                     f.usage === '티' ? 'bg-blue-100 text-blue-800' :
                                                     'bg-orange-100 text-orange-800'
                                                 }`}>{f.usage}</span>
-                                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 truncate max-w-[100px]">{f.type}</span>
+                                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{f.type}</span>
+                                                <h4 className="font-bold text-slate-800">{f.name}</h4>
                                             </div>
-                                            <h4 className="font-bold text-slate-800 mb-1">{f.name}</h4>
-                                            {f.description && <p className="text-xs text-slate-500 mb-2 line-clamp-2">{f.description}</p>}
                                             <div className="text-xs text-slate-600 space-y-1">
-                                                <p><span className="font-semibold">성분(NPK):</span> {f.N}-{f.P}-{f.K}</p>
-                                                <p><span className="font-semibold">포장/가격:</span> {f.unit} / {f.price.toLocaleString()}원</p>
-                                                <p><span className="font-semibold">권장량:</span> {f.rate}</p>
+                                                <p>성분(NPK): {f.N}-{f.P}-{f.K}</p>
+                                                <p>포장: {f.unit} / 가격: {f.price.toLocaleString()}원</p>
+                                                <p>권장량: {f.rate}</p>
                                             </div>
                                         </div>
                                     ))}
@@ -949,20 +910,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 />
             )}
 
-            {/* Add/Edit Fertilizer Modal */}
+            {/* Add Fertilizer Modal */}
             {isAddFertilizerModalOpen && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4" onClick={() => setIsAddFertilizerModalOpen(false)}>
                     <div className="bg-white rounded-lg shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
                         <div className="p-4 border-b flex justify-between items-center bg-slate-50">
-                            <h3 className="font-bold text-slate-800">
-                                {editingFertilizerIndex !== null ? '비료 정보 수정' : '새 비료 추가'}
-                            </h3>
+                            <h3 className="font-bold text-slate-800">새 비료 추가</h3>
                             <button onClick={() => setIsAddFertilizerModalOpen(false)}><CloseIcon /></button>
                         </div>
                         
                         <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                            {/* AI Smart Input Section (Only show for new fertilizers or explicitly asked) */}
-                            {editingFertilizerIndex === null && (
+                            {/* AI Smart Input Section */}
                             <div className="bg-purple-50 rounded-xl p-4 border border-purple-100">
                                 <h4 className="font-bold text-purple-900 flex items-center gap-2 mb-3 text-sm">
                                     <SparklesIcon /> AI 스마트 입력
@@ -1029,7 +987,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                                     <p className="text-xs text-red-500 mt-2 text-center">{aiError}</p>
                                 )}
                             </div>
-                            )}
 
                             <div className="border-t pt-4">
                                 <h4 className="font-bold text-slate-700 mb-3 text-sm">상세 정보 입력</h4>
@@ -1037,15 +994,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                                     <div>
                                         <label className="block text-xs font-bold text-slate-600 mb-1">제품명</label>
                                         <input type="text" className="w-full border p-2 rounded" value={newFertilizer.name || ''} onChange={e => setNewFertilizer({...newFertilizer, name: e.target.value})} placeholder="예: HPG-Special" />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-600 mb-1">제품 설명</label>
-                                        <textarea 
-                                            className="w-full border p-2 rounded text-sm h-20" 
-                                            value={newFertilizer.description || ''} 
-                                            onChange={e => setNewFertilizer({...newFertilizer, description: e.target.value})} 
-                                            placeholder="제품의 특징, 효능 등을 입력하세요." 
-                                        />
                                     </div>
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
@@ -1059,12 +1007,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                                         <div>
                                             <label className="block text-xs font-bold text-slate-600 mb-1">타입</label>
                                             <select className="w-full border p-2 rounded" value={newFertilizer.type} onChange={e => setNewFertilizer({...newFertilizer, type: e.target.value as any})}>
-                                                {Object.entries(FERTILIZER_TYPE_GROUPS).map(([group, types]) => (
-                                                    <optgroup label={group} key={group}>
-                                                        {(types as string[]).map(t => <option key={t} value={t}>{t}</option>)}
-                                                    </optgroup>
-                                                ))}
-                                                <option value="기타">기타</option>
+                                                <option value="완효성">완효성</option>
+                                                <option value="액상">액상</option>
+                                                <option value="수용성">수용성</option>
+                                                <option value="4종복합비료">4종복합</option>
+                                                <option value="기능성제제">기능성제제</option>
+                                                <option value="토양개량제">토양개량제</option>
                                             </select>
                                         </div>
                                     </div>
@@ -1114,9 +1062,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                                         <label className="block text-xs font-bold text-slate-600 mb-1">권장사용량</label>
                                         <input type="text" className="w-full border p-2 rounded" value={newFertilizer.rate || ''} onChange={e => setNewFertilizer({...newFertilizer, rate: e.target.value})} placeholder="예: 20g/㎡" />
                                     </div>
-                                    <button onClick={handleSaveFertilizer} className="w-full bg-blue-600 text-white font-bold py-3 rounded hover:bg-blue-700 shadow-md">
-                                        {editingFertilizerIndex !== null ? '수정 완료' : '추가하기'}
-                                    </button>
+                                    <button onClick={handleAddFertilizer} className="w-full bg-blue-600 text-white font-bold py-3 rounded hover:bg-blue-700 shadow-md">추가하기</button>
                                 </div>
                             </div>
                         </div>

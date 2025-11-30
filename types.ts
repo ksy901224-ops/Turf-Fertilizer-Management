@@ -31,7 +31,6 @@ export interface Fertilizer {
   stock?: number;
   imageUrl?: string;
   lowStockAlertEnabled?: boolean;
-  description?: string; // New field for detailed product description
 }
 
 export type NewFertilizerForm = {
