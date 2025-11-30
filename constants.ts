@@ -3,7 +3,7 @@ export const NUTRIENTS = ['N','P','K','Ca','Mg','S','Fe','Mn','Zn','Cu','B','Mo'
 
 export const USAGE_CATEGORIES = ['그린', '티', '페어웨이'];
 
-// Hierarchical Fertilizer Categories
+// Hierarchical Fertilizer Categories based on user request
 export const FERTILIZER_TYPE_GROUPS = {
     "I. 완효성 및 기초 비료": [
         "N-P-K 균형 비료",
@@ -17,7 +17,10 @@ export const FERTILIZER_TYPE_GROUPS = {
     ],
     "III. 미량요소 및 보조제": [
         "킬레이트 미량요소",
-        "고순도 철분/칼륨"
+        "고순도 철분/칼륨",
+        "아이언셔틀(18)", 
+        "30-K(17)", 
+        "황산칼륨(67)"
     ],
     "IV. 활력 및 스트레스 관리": [
         "냉해/동해 방지제"
