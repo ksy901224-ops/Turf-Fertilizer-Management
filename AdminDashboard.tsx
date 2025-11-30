@@ -345,6 +345,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         usage: '그린'
     });
 
+    // Bulk Add Modal State
+    const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
+    const [bulkPreviewData, setBulkPreviewData] = useState<Fertilizer[]>([]);
+    const [isBulkLoading, setIsBulkLoading] = useState(false);
+
     // Sorting and Filtering State for Approved Users
     const [userSearchTerm, setUserSearchTerm] = useState('');
     const [userSortField, setUserSortField] = useState<keyof UserDataSummary>('lastActivity');
@@ -356,6 +361,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
     const [aiSmartTab, setAiSmartTab] = useState<'text' | 'file'>('text');
     const [aiError, setAiError] = useState<string | null>(null);
     const [autoSaveAfterAi, setAutoSaveAfterAi] = useState(false);
+
+    // Fertilizer List Filtering/Sorting
+    const [fertilizerSearchTerm, setFertilizerSearchTerm] = useState('');
+    const [fertilizerFilterType, setFertilizerFilterType] = useState<string>('all');
+    const [fertilizerFilterUsage, setFertilizerFilterUsage] = useState<string>('all');
+    const [fertilizerSortField, setFertilizerSortField] = useState<keyof Fertilizer>('name');
+    const [fertilizerSortOrder, setFertilizerSortOrder] = useState<'asc' | 'desc'>('asc');
+    
+    // NPK Range Filter
+    const [minN, setMinN] = useState<string>('');
+    const [minP, setMinP] = useState<string>('');
+    const [minK, setMinK] = useState<string>('');
 
     useEffect(() => {
         loadData();
@@ -415,6 +432,47 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
 
         return data;
     }, [approvedUsersList, userSearchTerm, userSortField, userSortOrder]);
+
+    const processedFertilizers = useMemo(() => {
+        let data = [...masterFertilizers];
+
+        // Filter by Term
+        if (fertilizerSearchTerm) {
+            const lowerTerm = fertilizerSearchTerm.toLowerCase();
+            data = data.filter(f => f.name.toLowerCase().includes(lowerTerm));
+        }
+
+        // Filter by Type
+        if (fertilizerFilterType !== 'all') {
+            data = data.filter(f => f.type === fertilizerFilterType);
+        }
+
+        // Filter by Usage
+        if (fertilizerFilterUsage !== 'all') {
+            data = data.filter(f => f.usage === fertilizerFilterUsage);
+        }
+        
+        // Filter by NPK Range
+        if (minN) data = data.filter(f => f.N >= Number(minN));
+        if (minP) data = data.filter(f => f.P >= Number(minP));
+        if (minK) data = data.filter(f => f.K >= Number(minK));
+
+        // Sort
+        data.sort((a, b) => {
+            let comparison = 0;
+            const valA = a[fertilizerSortField];
+            const valB = b[fertilizerSortField];
+
+            if (typeof valA === 'number' && typeof valB === 'number') {
+                comparison = valA - valB;
+            } else {
+                comparison = String(valA).localeCompare(String(valB));
+            }
+            return fertilizerSortOrder === 'asc' ? comparison : -comparison;
+        });
+
+        return data;
+    }, [masterFertilizers, fertilizerSearchTerm, fertilizerFilterType, fertilizerFilterUsage, fertilizerSortField, fertilizerSortOrder, minN, minP, minK]);
 
     const handleSort = (field: keyof UserDataSummary) => {
         if (userSortField === field) {
@@ -551,9 +609,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             price: Number(dataToSave.price || 0),
             unit: dataToSave.unit || '',
             rate: dataToSave.rate || '',
-            stock: dataToSave.stock || 0,
-            imageUrl: dataToSave.imageUrl || '',
-            lowStockAlertEnabled: dataToSave.lowStockAlertEnabled || false,
+            // Preserve existing stock/image/alert if editing and not provided in update
+            stock: dataToSave.stock ?? (editingFertilizerIndex !== null ? masterFertilizers[editingFertilizerIndex].stock : 0),
+            imageUrl: dataToSave.imageUrl ?? (editingFertilizerIndex !== null ? masterFertilizers[editingFertilizerIndex].imageUrl : ''),
+            lowStockAlertEnabled: dataToSave.lowStockAlertEnabled ?? (editingFertilizerIndex !== null ? masterFertilizers[editingFertilizerIndex].lowStockAlertEnabled : false),
             description: dataToSave.description || '',
         };
 
@@ -570,7 +629,154 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         setNewFertilizer({ type: '완효성', usage: '그린' });
         setEditingFertilizerIndex(null);
         if (dataOverride) {
-            alert('AI 분석 결과가 자동으로 저장되었습니다.');
+            // console.log('Auto-saved fertilizer via AI');
+        }
+    };
+
+    // --- Bulk Import Logic ---
+    const handleDownloadTemplate = () => {
+        const headers = [
+            '제품명', '구분(그린/티/페어웨이)', '타입', '포장단위', '가격', '권장사용량(예:20g/m2)', '설명', 
+            'N', 'P', 'K', 'Ca', 'Mg', 'S', 'Fe', 'Mn', 'Zn', 'Cu', 'B', 'Mo', '아미노산'
+        ];
+        const example = [
+            '슈퍼그린', '그린', '완효성', '20kg', 50000, '20g/㎡', '최고급 완효성 비료', 
+            16, 2, 12, 2, 1, 4, 0, 0.5, 0, 0, 0, 0, 0
+        ];
+        
+        const ws = XLSX.utils.aoa_to_sheet([headers, example]);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "비료등록서식");
+        XLSX.writeFile(wb, "비료일괄등록_양식.xlsx");
+    };
+
+    const processBulkAiRequest = async (promptText: string, inlineDataParts: any[] = []) => {
+        setIsBulkLoading(true);
+        try {
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+            const groupsJSON = JSON.stringify(FERTILIZER_TYPE_GROUPS);
+            
+            const prompt = `
+                Analyze the provided document (Excel, Text, or Image) which contains a list of fertilizers.
+                Extract ALL items into a JSON Array.
+                Each item should have:
+                {
+                    "name": "Product Name",
+                    "usage": "One of ['그린', '티', '페어웨이'] (Infer if missing)",
+                    "type": "Select closest from: ${groupsJSON}",
+                    "unit": "Packaging Unit",
+                    "price": Number,
+                    "rate": "Recommended Rate",
+                    "description": "Short description",
+                    "N": Number, "P": Number, "K": Number, "Ca": Number, "Mg": Number, "S": Number, 
+                    "Fe": Number, "Mn": Number, "Zn": Number, "Cu": Number, "B": Number, "Mo": Number,
+                    "aminoAcid": Number
+                }
+                If usage/type is missing, infer it intelligently.
+                Return ONLY the JSON Array.
+                
+                Input:
+                ${promptText}
+            `;
+
+            const response = await ai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: { parts: [{ text: prompt }, ...inlineDataParts] }
+            });
+
+            let text = response.text || '';
+            text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+            const data = JSON.parse(text);
+            
+            if (Array.isArray(data)) {
+                setBulkPreviewData(data);
+            } else if (typeof data === 'object') {
+                setBulkPreviewData([data]);
+            } else {
+                alert('AI가 유효한 목록을 찾지 못했습니다.');
+            }
+        } catch (e) {
+            console.error("Bulk AI Error", e);
+            alert("AI 분석 중 오류가 발생했습니다.");
+        } finally {
+            setIsBulkLoading(false);
+        }
+    };
+
+    const handleBulkExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setIsBulkLoading(true);
+
+        const reader = new FileReader();
+        reader.onload = async (event: ProgressEvent<FileReader>) => {
+            const target = event.target as FileReader;
+            if (!target || !target.result) return;
+            
+            try {
+                const data = target.result;
+                const wb = XLSX.read(data, { type: 'array' });
+                const ws = wb.Sheets[wb.SheetNames[0]];
+                const jsonData = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
+                
+                // If standard excel with headers
+                if (jsonData.length > 1 && jsonData[0].some(h => typeof h === 'string' && (h.includes('제품명') || h.includes('Name')))) {
+                    // Manual Parse
+                    const headers = jsonData[0].map(h => String(h).trim());
+                    const rows = jsonData.slice(1);
+                    
+                    const parsed: Fertilizer[] = rows.map(row => {
+                        const getVal = (k: string) => {
+                            const idx = headers.findIndex(h => h.includes(k));
+                            return idx >= 0 ? row[idx] : undefined;
+                        };
+                        
+                        return {
+                            name: getVal('제품명') || getVal('Product') || '',
+                            usage: (getVal('구분') || getVal('Usage') || '그린') as any,
+                            type: (getVal('타입') || getVal('Type') || '완효성') as string,
+                            unit: getVal('포장') || getVal('Unit') || '',
+                            price: Number(getVal('가격') || getVal('Price') || 0),
+                            rate: getVal('사용량') || getVal('Rate') || '',
+                            description: getVal('설명') || '',
+                            N: Number(getVal('N') || 0), P: Number(getVal('P') || 0), K: Number(getVal('K') || 0),
+                            Ca: Number(getVal('Ca') || 0), Mg: Number(getVal('Mg') || 0), S: Number(getVal('S') || 0),
+                            Fe: Number(getVal('Fe') || 0), Mn: Number(getVal('Mn') || 0), Zn: Number(getVal('Zn') || 0),
+                            Cu: Number(getVal('Cu') || 0), B: Number(getVal('B') || 0), Mo: Number(getVal('Mo') || 0),
+                            aminoAcid: Number(getVal('아미노') || 0),
+                            stock: 0,
+                            imageUrl: '',
+                            lowStockAlertEnabled: false,
+                            Cl:0, Na:0, Si:0, Ni:0, Co:0, V:0
+                        } as Fertilizer;
+                    }).filter(f => f.name); // Filter empty names
+                    
+                    setBulkPreviewData(parsed);
+                    setIsBulkLoading(false);
+                } else {
+                    // Fallback to AI for non-standard structure
+                    const csvData = XLSX.utils.sheet_to_csv(ws);
+                    await processBulkAiRequest(`Spreadsheet Data:\n${csvData}`);
+                }
+            } catch (err) {
+                console.error("Excel Read Error", err);
+                alert("파일 읽기 실패");
+                setIsBulkLoading(false);
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    };
+
+    const handleSaveBulkData = async () => {
+        if (bulkPreviewData.length === 0) return;
+        if (window.confirm(`${bulkPreviewData.length}개의 비료를 등록하시겠습니까?`)) {
+            // Merge with existing
+            const newList = [...masterFertilizers, ...bulkPreviewData];
+            await api.saveFertilizers('admin', newList);
+            setMasterFertilizers(newList);
+            setBulkPreviewData([]);
+            setIsBulkModalOpen(false);
+            alert("일괄 등록이 완료되었습니다.");
         }
     };
 
@@ -667,8 +873,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
 
         if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.name.endsWith('.csv')) {
             const reader = new FileReader();
-            reader.onload = async (event: any) => {
-                const target = event.target;
+            reader.onload = async (event: ProgressEvent<FileReader>) => {
+                const target = event.target as FileReader;
                 if (!target) return;
                 const data = target.result;
                 if (!data || typeof data === 'string') return; // Expecting ArrayBuffer for 'array' type read
@@ -683,8 +889,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             reader.readAsArrayBuffer(file);
         } else if (file.type.startsWith('image/') || file.type === 'application/pdf') {
             const reader = new FileReader();
-            reader.onloadend = async (event: any) => {
-                const target = event.target;
+            reader.onloadend = async (event: ProgressEvent<FileReader>) => {
+                const target = event.target as FileReader;
                 if (!target) return;
                 const result = target.result;
                 if (typeof result !== 'string') return;
@@ -703,8 +909,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         } else {
              // Treat as text file
             const reader = new FileReader();
-            reader.onload = async (event: any) => {
-                const target = event.target;
+            reader.onload = async (event: ProgressEvent<FileReader>) => {
+                const target = event.target as FileReader;
                 if (!target) return;
                 const text = target.result;
                 if (typeof text !== 'string') return;
@@ -920,18 +1126,58 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                             </div>
                         ) : (
                             <div>
-                                <div className="flex justify-between items-center mb-4">
+                                <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4">
                                     <h3 className="font-bold text-slate-700">등록된 마스터 비료 목록 ({masterFertilizers.length})</h3>
-                                    <button 
-                                        onClick={openAddModal}
-                                        className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white text-sm font-bold rounded-md hover:bg-green-700 transition-colors"
-                                    >
-                                        <PlusIcon /> 새 비료 추가
-                                    </button>
+                                    <div className="flex gap-2">
+                                        <button 
+                                            onClick={() => setIsBulkModalOpen(true)}
+                                            className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white text-sm font-bold rounded-md hover:bg-blue-700 transition-colors"
+                                        >
+                                            <UploadIcon className="w-4 h-4" /> 엑셀 일괄 업로드
+                                        </button>
+                                        <button 
+                                            onClick={openAddModal}
+                                            className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white text-sm font-bold rounded-md hover:bg-green-700 transition-colors"
+                                        >
+                                            <PlusIcon /> 새 비료 추가
+                                        </button>
+                                    </div>
                                 </div>
                                 
+                                {/* Filters UI */}
+                                <div className="bg-slate-50 p-3 rounded-lg border mb-4 flex flex-wrap gap-3 items-end text-sm">
+                                    <div className="flex-1 min-w-[200px]">
+                                        <label className="block text-xs text-slate-500 mb-1">검색</label>
+                                        <input 
+                                            type="text" 
+                                            placeholder="제품명 검색..." 
+                                            value={fertilizerSearchTerm}
+                                            onChange={e => setFertilizerSearchTerm(e.target.value)}
+                                            className="w-full p-2 border rounded"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-slate-500 mb-1">구분</label>
+                                        <select value={fertilizerFilterUsage} onChange={e => setFertilizerFilterUsage(e.target.value)} className="p-2 border rounded">
+                                            <option value="all">전체</option>
+                                            <option value="그린">그린</option>
+                                            <option value="티">티</option>
+                                            <option value="페어웨이">페어웨이</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs text-slate-500 mb-1">정렬</label>
+                                        <select value={fertilizerSortField} onChange={e => setFertilizerSortField(e.target.value as any)} className="p-2 border rounded">
+                                            <option value="name">이름순</option>
+                                            <option value="price">가격순</option>
+                                            <option value="stock">재고순</option>
+                                            <option value="N">질소(N)순</option>
+                                        </select>
+                                    </div>
+                                </div>
+
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                    {masterFertilizers.map((f, idx) => (
+                                    {processedFertilizers.map((f, idx) => (
                                         <div key={`${f.name}-${idx}`} className="border rounded-lg p-4 hover:shadow-md transition-shadow relative group bg-white">
                                             <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
                                                 <button 
@@ -1183,6 +1429,107 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                                     </button>
                                 </div>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Bulk Upload Modal */}
+            {isBulkModalOpen && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4" onClick={() => setIsBulkModalOpen(false)}>
+                    <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
+                        <div className="p-4 border-b flex justify-between items-center bg-slate-50">
+                            <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                                <UploadIcon className="w-5 h-5" /> 엑셀 일괄 업로드
+                            </h3>
+                            <button onClick={() => setIsBulkModalOpen(false)}><CloseIcon /></button>
+                        </div>
+                        
+                        <div className="p-6 overflow-y-auto flex-1">
+                            <div className="space-y-6">
+                                <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg text-sm text-blue-800">
+                                    <p className="font-bold mb-2">💡 사용 가이드</p>
+                                    <ul className="list-disc pl-5 space-y-1">
+                                        <li>대량의 비료 데이터를 엑셀 파일로 한 번에 등록할 수 있습니다.</li>
+                                        <li>아래 <strong>'양식 다운로드'</strong>를 통해 제공되는 형식을 사용해주세요.</li>
+                                        <li>AI 분석을 원하시면, 일반 엑셀이나 PDF 파일도 업로드 가능합니다. (시간이 더 소요될 수 있습니다)</li>
+                                    </ul>
+                                    <button 
+                                        onClick={handleDownloadTemplate}
+                                        className="mt-3 flex items-center gap-2 px-3 py-1.5 bg-white border border-blue-300 rounded text-blue-700 font-bold hover:bg-blue-100 transition-colors text-xs shadow-sm"
+                                    >
+                                        <DownloadIcon className="w-3 h-3" /> 엑셀 등록 양식 다운로드
+                                    </button>
+                                </div>
+
+                                <div className="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center bg-slate-50 hover:bg-white transition-colors relative group">
+                                    <input 
+                                        type="file" 
+                                        onChange={handleBulkExcelUpload}
+                                        accept=".xlsx, .xls, .csv, .pdf"
+                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                        disabled={isBulkLoading}
+                                    />
+                                    <div className="flex flex-col items-center justify-center pointer-events-none">
+                                        {isBulkLoading ? (
+                                            <div className="animate-spin h-10 w-10 border-4 border-blue-500 border-t-transparent rounded-full mb-3"></div>
+                                        ) : (
+                                            <UploadIcon className="h-10 w-10 text-slate-400 group-hover:text-blue-500 transition-colors mb-3" />
+                                        )}
+                                        <p className="text-sm font-bold text-slate-700">
+                                            {isBulkLoading ? '파일 분석 및 데이터 추출 중...' : '엑셀 또는 PDF 파일 업로드'}
+                                        </p>
+                                        <p className="text-xs text-slate-400 mt-1">
+                                            드래그 앤 드롭 또는 클릭하여 파일 선택
+                                        </p>
+                                    </div>
+                                </div>
+
+                                {bulkPreviewData.length > 0 && (
+                                    <div className="border rounded-lg overflow-hidden">
+                                        <div className="bg-green-50 p-3 border-b border-green-100 flex justify-between items-center">
+                                            <h4 className="font-bold text-green-800 text-sm">✅ 분석된 데이터 미리보기 ({bulkPreviewData.length}건)</h4>
+                                        </div>
+                                        <div className="max-h-60 overflow-y-auto">
+                                            <table className="w-full text-xs text-left">
+                                                <thead className="bg-slate-100 text-slate-600 sticky top-0">
+                                                    <tr>
+                                                        <th className="p-2">제품명</th>
+                                                        <th className="p-2">구분/타입</th>
+                                                        <th className="p-2">성분(N-P-K)</th>
+                                                        <th className="p-2">가격/포장</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100">
+                                                    {bulkPreviewData.map((item, idx) => (
+                                                        <tr key={idx} className="hover:bg-slate-50">
+                                                            <td className="p-2 font-medium">{item.name}</td>
+                                                            <td className="p-2 text-slate-500">{item.usage} / {item.type}</td>
+                                                            <td className="p-2 font-mono">{item.N}-{item.P}-{item.K}</td>
+                                                            <td className="p-2">{item.price.toLocaleString()}원 ({item.unit})</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        <div className="p-4 border-t bg-slate-50 flex justify-end gap-2">
+                            <button 
+                                onClick={() => setIsBulkModalOpen(false)}
+                                className="px-4 py-2 bg-white border border-slate-300 text-slate-700 font-bold rounded hover:bg-slate-50 text-sm"
+                            >
+                                취소
+                            </button>
+                            <button 
+                                onClick={handleSaveBulkData}
+                                disabled={bulkPreviewData.length === 0}
+                                className="px-4 py-2 bg-blue-600 text-white font-bold rounded hover:bg-blue-700 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {bulkPreviewData.length}개 비료 일괄 등록
+                            </button>
                         </div>
                     </div>
                 </div>
