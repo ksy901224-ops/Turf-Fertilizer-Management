@@ -4,9 +4,8 @@ import * as api from './api';
 import * as XLSX from 'xlsx';
 import { GoogleGenAI } from '@google/genai';
 import { UserDataSummary, Fertilizer, LogEntry } from './types';
-import { LogoutIcon, DashboardIcon, UsersIcon, PlusIcon, TrashIcon, CloseIcon, ClipboardListIcon, CameraIcon, DocumentSearchIcon, UploadIcon, SparklesIcon, DownloadIcon, PencilIcon } from './icons';
+import { LogoutIcon, DashboardIcon, UsersIcon, PlusIcon, TrashIcon, CloseIcon, ClipboardListIcon, CameraIcon, DocumentSearchIcon, UploadIcon, SparklesIcon, DownloadIcon } from './icons';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { FERTILIZER_TYPE_GROUPS } from './constants';
 
 interface AdminDashboardProps {
     user: string;
@@ -64,7 +63,6 @@ const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'
 
 const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose }) => {
     const [statsView, setStatsView] = useState<'monthly' | 'daily' | 'yearly'>('monthly');
-    const [selectedYear, setSelectedYear] = useState<string>('all');
 
     // 1. Calculate Product Statistics (Most used, Cost share, Quantity)
     const productStats = useMemo(() => {
@@ -104,12 +102,8 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose }) 
         const daily: Record<string, number> = {};
 
         userData.logs.forEach(log => {
-            // Apply Year Filter if selected
             const date = new Date(log.date);
             const y = date.getFullYear().toString();
-            
-            if (selectedYear !== 'all' && y !== selectedYear) return;
-
             const m = `${y}-${String(date.getMonth() + 1).padStart(2, '0')}`;
             const d = log.date; // YYYY-MM-DD
 
@@ -124,37 +118,6 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose }) 
         const dailyArr = Object.entries(daily).map(([k, v]) => ({ period: k, cost: v })).sort((a, b) => a.period.localeCompare(b.period)); // Sort daily ascending for chart
 
         return { monthly: monthlyArr, yearly: yearlyArr, daily: dailyArr };
-    }, [userData.logs, selectedYear]);
-
-    // 3. Annual Usage Stats (New Feature for Growth Pattern)
-    const annualUsageStats = useMemo(() => {
-        const stats: Record<string, { totalAmount: number, unit: string, cost: number, count: number }> = {};
-        
-        userData.logs.forEach(log => {
-            const date = new Date(log.date);
-            const y = date.getFullYear().toString();
-            
-            if (selectedYear !== 'all' && y !== selectedYear) return;
-
-            if (!stats[log.product]) {
-                const unit = log.applicationUnit.includes('ml') ? 'L' : 'kg';
-                stats[log.product] = { totalAmount: 0, unit, cost: 0, count: 0 };
-            }
-            
-            const amount = (log.area * log.applicationRate) / 1000;
-            stats[log.product].totalAmount += amount;
-            stats[log.product].cost += log.totalCost;
-            stats[log.product].count += 1;
-        });
-
-        return Object.entries(stats)
-            .map(([name, data]) => ({ name, ...data }))
-            .sort((a, b) => b.totalAmount - a.totalAmount);
-    }, [userData.logs, selectedYear]);
-
-    const availableYears = useMemo(() => {
-        const years = new Set(userData.logs.map(l => new Date(l.date).getFullYear().toString()));
-        return Array.from(years).sort().reverse();
     }, [userData.logs]);
 
     const formatXAxis = (tickItem: string) => {
@@ -215,26 +178,16 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose }) 
                         <div className="bg-white p-4 rounded-lg border shadow-sm flex flex-col">
                             <div className="flex justify-between items-center mb-4">
                                 <h3 className="font-bold text-slate-700">📊 기간별 비용 추이</h3>
-                                <div className="flex gap-2">
-                                    <select 
-                                        value={selectedYear} 
-                                        onChange={(e) => setSelectedYear(e.target.value)}
-                                        className="text-xs p-1 border rounded bg-slate-50"
-                                    >
-                                        <option value="all">전체 연도</option>
-                                        {availableYears.map(y => <option key={y} value={y}>{y}년</option>)}
-                                    </select>
-                                    <div className="flex bg-slate-100 rounded p-1">
-                                        {(['daily', 'monthly', 'yearly'] as const).map(view => (
-                                            <button
-                                                key={view}
-                                                onClick={() => setStatsView(view)}
-                                                className={`px-3 py-1 text-xs font-bold rounded transition-colors ${statsView === view ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                                            >
-                                                {view === 'daily' ? '일별' : view === 'monthly' ? '월별' : '연간'}
-                                            </button>
-                                        ))}
-                                    </div>
+                                <div className="flex bg-slate-100 rounded p-1">
+                                    {(['daily', 'monthly', 'yearly'] as const).map(view => (
+                                        <button
+                                            key={view}
+                                            onClick={() => setStatsView(view)}
+                                            className={`px-3 py-1 text-xs font-bold rounded transition-colors ${statsView === view ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                        >
+                                            {view === 'daily' ? '일별' : view === 'monthly' ? '월별' : '연간'}
+                                        </button>
+                                    ))}
                                 </div>
                             </div>
                             <div className="h-64">
@@ -281,38 +234,65 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose }) 
                         </div>
                     </div>
 
-                    {/* NEW SECTION: Annual Total Fertilizer Usage */}
+                    {/* Product Usage Detail Table */}
                     <div className="bg-white border rounded-lg overflow-hidden">
-                        <div className="p-4 bg-slate-50 border-b flex justify-between items-center">
-                            <h3 className="font-bold text-slate-700">📅 연간 비료 총 사용량 및 생육 자재 투입 현황</h3>
-                            <span className="text-xs text-slate-500 bg-white px-2 py-1 rounded border">
-                                {selectedYear === 'all' ? '전체 기간' : `${selectedYear}년도 데이터`}
-                            </span>
+                        <div className="p-4 bg-slate-50 border-b">
+                            <h3 className="font-bold text-slate-700">📦 제품별 상세 사용 내역</h3>
                         </div>
-                        <div className="max-h-80 overflow-y-auto">
+                        <div className="max-h-64 overflow-y-auto">
                             <table className="w-full text-sm text-left">
                                 <thead className="bg-slate-100 text-slate-600 sticky top-0 z-10">
                                     <tr>
                                         <th className="p-3">제품명</th>
-                                        <th className="p-3 text-right">총 사용량 (kg/L)</th>
                                         <th className="p-3 text-right">사용 횟수</th>
+                                        <th className="p-3 text-right">총 사용량 (추정)</th>
                                         <th className="p-3 text-right">총 비용</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
-                                    {annualUsageStats.length > 0 ? (
-                                        annualUsageStats.map((item, idx) => (
+                                    {productStats.length > 0 ? (
+                                        productStats.map((item, idx) => (
                                             <tr key={idx} className="hover:bg-slate-50">
                                                 <td className="p-3 text-slate-700 font-medium">{item.name}</td>
-                                                <td className="p-3 text-right font-bold text-blue-800">
-                                                    {item.totalAmount.toFixed(1)} <span className="text-xs font-normal text-slate-500">{item.unit}</span>
-                                                </td>
                                                 <td className="p-3 text-right text-slate-600">{item.count}회</td>
-                                                <td className="p-3 text-right font-mono text-slate-800">{Math.round(item.cost).toLocaleString()}원</td>
+                                                <td className="p-3 text-right text-slate-600">
+                                                    {item.totalAmount.toFixed(1)} <span className="text-xs text-slate-400">{item.unitHint}</span>
+                                                </td>
+                                                <td className="p-3 text-right font-mono font-bold text-slate-800">{Math.round(item.totalCost).toLocaleString()}원</td>
                                             </tr>
                                         ))
                                     ) : (
-                                        <tr><td colSpan={4} className="p-6 text-center text-slate-400">해당 연도의 데이터가 없습니다.</td></tr>
+                                        <tr><td colSpan={4} className="p-6 text-center text-slate-400">데이터가 없습니다.</td></tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    {/* Period Data Table */}
+                    <div className="bg-white border rounded-lg overflow-hidden">
+                         <div className="p-4 bg-slate-50 border-b">
+                            <h3 className="font-bold text-slate-700">📅 기간별 비용 내역 ({statsView === 'daily' ? '일별' : statsView === 'monthly' ? '월별' : '연간'})</h3>
+                        </div>
+                        <div className="max-h-64 overflow-y-auto">
+                            <table className="w-full text-sm text-left">
+                                <thead className="bg-slate-100 text-slate-600 sticky top-0 z-10">
+                                    <tr>
+                                        <th className="p-3">기간</th>
+                                        <th className="p-3 text-right">비용</th>
+                                    </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {timeStats[statsView].length > 0 ? (
+                                        // Sort desc for table (newest first)
+                                        [...timeStats[statsView]].sort((a,b) => b.period.localeCompare(a.period)).map((item, idx) => (
+                                            <tr key={idx} className="hover:bg-slate-50">
+                                                <td className="p-3 text-slate-700">{item.period}</td>
+                                                <td className="p-3 text-right font-mono font-medium text-slate-900">{Math.round(item.cost).toLocaleString()}원</td>
+                                            </tr>
+                                        ))
+                                    ) : (
+                                        <tr><td colSpan={2} className="p-6 text-center text-slate-400">데이터가 없습니다.</td></tr>
                                     )}
                                 </tbody>
                             </table>
@@ -339,16 +319,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
     
     // New Fertilizer Form State
     const [isAddFertilizerModalOpen, setIsAddFertilizerModalOpen] = useState(false);
-    const [editingFertilizerIndex, setEditingFertilizerIndex] = useState<number | null>(null);
     const [newFertilizer, setNewFertilizer] = useState<Partial<Fertilizer>>({
         type: '완효성',
         usage: '그린'
     });
-
-    // Bulk Add Modal State
-    const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
-    const [bulkPreviewData, setBulkPreviewData] = useState<Fertilizer[]>([]);
-    const [isBulkLoading, setIsBulkLoading] = useState(false);
 
     // Sorting and Filtering State for Approved Users
     const [userSearchTerm, setUserSearchTerm] = useState('');
@@ -360,19 +334,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
     const [isAiFillLoading, setIsAiFillLoading] = useState(false);
     const [aiSmartTab, setAiSmartTab] = useState<'text' | 'file'>('text');
     const [aiError, setAiError] = useState<string | null>(null);
-    const [autoSaveAfterAi, setAutoSaveAfterAi] = useState(false);
-
-    // Fertilizer List Filtering/Sorting
-    const [fertilizerSearchTerm, setFertilizerSearchTerm] = useState('');
-    const [fertilizerFilterType, setFertilizerFilterType] = useState<string>('all');
-    const [fertilizerFilterUsage, setFertilizerFilterUsage] = useState<string>('all');
-    const [fertilizerSortField, setFertilizerSortField] = useState<keyof Fertilizer>('name');
-    const [fertilizerSortOrder, setFertilizerSortOrder] = useState<'asc' | 'desc'>('asc');
-    
-    // NPK Range Filter
-    const [minN, setMinN] = useState<string>('');
-    const [minP, setMinP] = useState<string>('');
-    const [minK, setMinK] = useState<string>('');
 
     useEffect(() => {
         loadData();
@@ -432,47 +393,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
 
         return data;
     }, [approvedUsersList, userSearchTerm, userSortField, userSortOrder]);
-
-    const processedFertilizers = useMemo(() => {
-        let data = [...masterFertilizers];
-
-        // Filter by Term
-        if (fertilizerSearchTerm) {
-            const lowerTerm = fertilizerSearchTerm.toLowerCase();
-            data = data.filter(f => f.name.toLowerCase().includes(lowerTerm));
-        }
-
-        // Filter by Type
-        if (fertilizerFilterType !== 'all') {
-            data = data.filter(f => f.type === fertilizerFilterType);
-        }
-
-        // Filter by Usage
-        if (fertilizerFilterUsage !== 'all') {
-            data = data.filter(f => f.usage === fertilizerFilterUsage);
-        }
-        
-        // Filter by NPK Range
-        if (minN) data = data.filter(f => f.N >= Number(minN));
-        if (minP) data = data.filter(f => f.P >= Number(minP));
-        if (minK) data = data.filter(f => f.K >= Number(minK));
-
-        // Sort
-        data.sort((a, b) => {
-            let comparison = 0;
-            const valA = a[fertilizerSortField];
-            const valB = b[fertilizerSortField];
-
-            if (typeof valA === 'number' && typeof valB === 'number') {
-                comparison = valA - valB;
-            } else {
-                comparison = String(valA).localeCompare(String(valB));
-            }
-            return fertilizerSortOrder === 'asc' ? comparison : -comparison;
-        });
-
-        return data;
-    }, [masterFertilizers, fertilizerSearchTerm, fertilizerFilterType, fertilizerFilterUsage, fertilizerSortField, fertilizerSortOrder, minN, minP, minK]);
 
     const handleSort = (field: keyof UserDataSummary) => {
         if (userSortField === field) {
@@ -561,223 +481,48 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         }
     };
 
-    const openAddModal = () => {
-        setEditingFertilizerIndex(null);
-        setNewFertilizer({ type: '완효성', usage: '그린' });
-        setIsAddFertilizerModalOpen(true);
-    };
-
-    const openEditModal = (index: number, fertilizer: Fertilizer) => {
-        setEditingFertilizerIndex(index);
-        setNewFertilizer({ ...fertilizer });
-        setIsAddFertilizerModalOpen(true);
-    };
-
-    const handleSaveFertilizer = async (dataOverride?: Partial<Fertilizer>) => {
-        // Use override data if provided (for auto-save), otherwise use state
-        const dataToSave = dataOverride || newFertilizer;
-
-        if (!dataToSave.name || !dataToSave.unit || !dataToSave.rate) {
-            // Only alert if manual save, skip if automated call might be incomplete
-            if (!dataOverride) alert('필수 정보를 모두 입력해주세요.');
+    const handleAddFertilizer = async () => {
+        if (!newFertilizer.name || !newFertilizer.unit || !newFertilizer.rate) {
+            alert('필수 정보를 모두 입력해주세요.');
             return;
         }
 
-        const fertilizerData: Fertilizer = {
-            name: dataToSave.name || '',
-            usage: (dataToSave.usage || '그린') as '그린' | '티' | '페어웨이',
-            type: (dataToSave.type || '완효성') as string,
-            N: Number(dataToSave.N || 0),
-            P: Number(dataToSave.P || 0),
-            K: Number(dataToSave.K || 0),
-            Ca: Number(dataToSave.Ca || 0),
-            Mg: Number(dataToSave.Mg || 0),
-            S: Number(dataToSave.S || 0),
-            Fe: Number(dataToSave.Fe || 0),
-            Mn: Number(dataToSave.Mn || 0),
-            Zn: Number(dataToSave.Zn || 0),
-            Cu: Number(dataToSave.Cu || 0),
-            B: Number(dataToSave.B || 0),
-            Mo: Number(dataToSave.Mo || 0),
-            Cl: Number(dataToSave.Cl || 0),
-            Na: Number(dataToSave.Na || 0),
-            Si: Number(dataToSave.Si || 0),
-            Ni: Number(dataToSave.Ni || 0),
-            Co: Number(dataToSave.Co || 0),
-            V: Number(dataToSave.V || 0),
-            aminoAcid: Number(dataToSave.aminoAcid || 0),
-            price: Number(dataToSave.price || 0),
-            unit: dataToSave.unit || '',
-            rate: dataToSave.rate || '',
-            // Preserve existing stock/image/alert if editing and not provided in update
-            stock: dataToSave.stock ?? (editingFertilizerIndex !== null ? masterFertilizers[editingFertilizerIndex].stock : 0),
-            imageUrl: dataToSave.imageUrl ?? (editingFertilizerIndex !== null ? masterFertilizers[editingFertilizerIndex].imageUrl : ''),
-            lowStockAlertEnabled: dataToSave.lowStockAlertEnabled ?? (editingFertilizerIndex !== null ? masterFertilizers[editingFertilizerIndex].lowStockAlertEnabled : false),
-            description: dataToSave.description || '',
+        const fertilizerToAdd: Fertilizer = {
+            name: newFertilizer.name,
+            usage: newFertilizer.usage as '그린' | '티' | '페어웨이',
+            type: newFertilizer.type as any,
+            N: Number(newFertilizer.N || 0),
+            P: Number(newFertilizer.P || 0),
+            K: Number(newFertilizer.K || 0),
+            Ca: Number(newFertilizer.Ca || 0),
+            Mg: Number(newFertilizer.Mg || 0),
+            S: Number(newFertilizer.S || 0),
+            Fe: Number(newFertilizer.Fe || 0),
+            Mn: Number(newFertilizer.Mn || 0),
+            Zn: Number(newFertilizer.Zn || 0),
+            Cu: Number(newFertilizer.Cu || 0),
+            B: Number(newFertilizer.B || 0),
+            Mo: Number(newFertilizer.Mo || 0),
+            Cl: Number(newFertilizer.Cl || 0),
+            Na: Number(newFertilizer.Na || 0),
+            Si: Number(newFertilizer.Si || 0),
+            Ni: Number(newFertilizer.Ni || 0),
+            Co: Number(newFertilizer.Co || 0),
+            V: Number(newFertilizer.V || 0),
+            aminoAcid: Number(newFertilizer.aminoAcid || 0),
+            price: Number(newFertilizer.price || 0),
+            unit: newFertilizer.unit,
+            rate: newFertilizer.rate,
+            stock: 0,
+            imageUrl: '',
+            lowStockAlertEnabled: false,
         };
 
-        const newList = [...masterFertilizers];
-        if (editingFertilizerIndex !== null) {
-            newList[editingFertilizerIndex] = fertilizerData;
-        } else {
-            newList.push(fertilizerData);
-        }
-
+        const newList = [...masterFertilizers, fertilizerToAdd];
         await api.saveFertilizers('admin', newList);
         setMasterFertilizers(newList);
         setIsAddFertilizerModalOpen(false);
         setNewFertilizer({ type: '완효성', usage: '그린' });
-        setEditingFertilizerIndex(null);
-        if (dataOverride) {
-            // console.log('Auto-saved fertilizer via AI');
-        }
-    };
-
-    // --- Bulk Import Logic ---
-    const handleDownloadTemplate = () => {
-        const headers = [
-            '제품명', '구분(그린/티/페어웨이)', '타입', '포장단위', '가격', '권장사용량(예:20g/m2)', '설명', 
-            'N', 'P', 'K', 'Ca', 'Mg', 'S', 'Fe', 'Mn', 'Zn', 'Cu', 'B', 'Mo', '아미노산'
-        ];
-        const example = [
-            '슈퍼그린', '그린', '완효성', '20kg', 50000, '20g/㎡', '최고급 완효성 비료', 
-            16, 2, 12, 2, 1, 4, 0, 0.5, 0, 0, 0, 0, 0
-        ];
-        
-        const ws = XLSX.utils.aoa_to_sheet([headers, example]);
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "비료등록서식");
-        XLSX.writeFile(wb, "비료일괄등록_양식.xlsx");
-    };
-
-    const processBulkAiRequest = async (promptText: string, inlineDataParts: any[] = []) => {
-        setIsBulkLoading(true);
-        try {
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-            const groupsJSON = JSON.stringify(FERTILIZER_TYPE_GROUPS);
-            
-            const prompt = `
-                Analyze the provided document (Excel, Text, or Image) which contains a list of fertilizers.
-                Extract ALL items into a JSON Array.
-                Each item should have:
-                {
-                    "name": "Product Name",
-                    "usage": "One of ['그린', '티', '페어웨이'] (Infer if missing)",
-                    "type": "Select closest from: ${groupsJSON}",
-                    "unit": "Packaging Unit",
-                    "price": Number,
-                    "rate": "Recommended Rate",
-                    "description": "Short description",
-                    "N": Number, "P": Number, "K": Number, "Ca": Number, "Mg": Number, "S": Number, 
-                    "Fe": Number, "Mn": Number, "Zn": Number, "Cu": Number, "B": Number, "Mo": Number,
-                    "aminoAcid": Number
-                }
-                If usage/type is missing, infer it intelligently.
-                Return ONLY the JSON Array.
-                
-                Input:
-                ${promptText}
-            `;
-
-            const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: { parts: [{ text: prompt }, ...inlineDataParts] }
-            });
-
-            let text = response.text || '';
-            text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-            const data = JSON.parse(text);
-            
-            if (Array.isArray(data)) {
-                setBulkPreviewData(data);
-            } else if (typeof data === 'object') {
-                setBulkPreviewData([data]);
-            } else {
-                alert('AI가 유효한 목록을 찾지 못했습니다.');
-            }
-        } catch (e) {
-            console.error("Bulk AI Error", e);
-            alert("AI 분석 중 오류가 발생했습니다.");
-        } finally {
-            setIsBulkLoading(false);
-        }
-    };
-
-    const handleBulkExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        setIsBulkLoading(true);
-
-        const reader = new FileReader();
-        reader.onload = async (event: ProgressEvent<FileReader>) => {
-            const target = event.target as FileReader;
-            if (!target || !target.result) return;
-            
-            try {
-                const data = target.result;
-                const wb = XLSX.read(data, { type: 'array' });
-                const ws = wb.Sheets[wb.SheetNames[0]];
-                const jsonData = XLSX.utils.sheet_to_json(ws, { header: 1 }) as any[][];
-                
-                // If standard excel with headers
-                if (jsonData.length > 1 && jsonData[0].some(h => typeof h === 'string' && (h.includes('제품명') || h.includes('Name')))) {
-                    // Manual Parse
-                    const headers = jsonData[0].map(h => String(h).trim());
-                    const rows = jsonData.slice(1);
-                    
-                    const parsed: Fertilizer[] = rows.map(row => {
-                        const getVal = (k: string) => {
-                            const idx = headers.findIndex(h => h.includes(k));
-                            return idx >= 0 ? row[idx] : undefined;
-                        };
-                        
-                        return {
-                            name: getVal('제품명') || getVal('Product') || '',
-                            usage: (getVal('구분') || getVal('Usage') || '그린') as any,
-                            type: (getVal('타입') || getVal('Type') || '완효성') as string,
-                            unit: getVal('포장') || getVal('Unit') || '',
-                            price: Number(getVal('가격') || getVal('Price') || 0),
-                            rate: getVal('사용량') || getVal('Rate') || '',
-                            description: getVal('설명') || '',
-                            N: Number(getVal('N') || 0), P: Number(getVal('P') || 0), K: Number(getVal('K') || 0),
-                            Ca: Number(getVal('Ca') || 0), Mg: Number(getVal('Mg') || 0), S: Number(getVal('S') || 0),
-                            Fe: Number(getVal('Fe') || 0), Mn: Number(getVal('Mn') || 0), Zn: Number(getVal('Zn') || 0),
-                            Cu: Number(getVal('Cu') || 0), B: Number(getVal('B') || 0), Mo: Number(getVal('Mo') || 0),
-                            aminoAcid: Number(getVal('아미노') || 0),
-                            stock: 0,
-                            imageUrl: '',
-                            lowStockAlertEnabled: false,
-                            Cl:0, Na:0, Si:0, Ni:0, Co:0, V:0
-                        } as Fertilizer;
-                    }).filter(f => f.name); // Filter empty names
-                    
-                    setBulkPreviewData(parsed);
-                    setIsBulkLoading(false);
-                } else {
-                    // Fallback to AI for non-standard structure
-                    const csvData = XLSX.utils.sheet_to_csv(ws);
-                    await processBulkAiRequest(`Spreadsheet Data:\n${csvData}`);
-                }
-            } catch (err) {
-                console.error("Excel Read Error", err);
-                alert("파일 읽기 실패");
-                setIsBulkLoading(false);
-            }
-        };
-        reader.readAsArrayBuffer(file);
-    };
-
-    const handleSaveBulkData = async () => {
-        if (bulkPreviewData.length === 0) return;
-        if (window.confirm(`${bulkPreviewData.length}개의 비료를 등록하시겠습니까?`)) {
-            // Merge with existing
-            const newList = [...masterFertilizers, ...bulkPreviewData];
-            await api.saveFertilizers('admin', newList);
-            setMasterFertilizers(newList);
-            setBulkPreviewData([]);
-            setIsBulkModalOpen(false);
-            alert("일괄 등록이 완료되었습니다.");
-        }
     };
 
     // --- AI Smart Fill Logic ---
@@ -787,19 +532,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         setAiError(null);
         try {
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
-            const groupsJSON = JSON.stringify(FERTILIZER_TYPE_GROUPS);
-            
             const prompt = `
                 Analyze the provided fertilizer information (Text, Image, Excel, PDF, or CSV).
                 Extract the following details and return ONLY a JSON object:
                 {
                     "name": "Product Name",
                     "usage": "One of ['그린', '티', '페어웨이']",
-                    "type": "The exact sub-category string found in this hierarchy: ${groupsJSON}. If no perfect match, use '기타'.",
-                    "unit": "Packaging Unit (e.g., '20kg', '10L')",
+                    "type": "One of ['완효성', '액상', '수용성', '4종복합비료', '기능성제제', '토양개량제']",
+                    "unit": "Packaging Unit (e.g., '20kg')",
                     "price": Number (approximate or 0 if unknown),
                     "rate": "Recommended Rate (e.g., '20g/㎡')",
-                    "description": "A detailed description of the product features, active ingredients, and effects in Korean",
                     "N": Number (Percentage),
                     "P": Number (Percentage),
                     "K": Number (Percentage),
@@ -810,10 +552,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 }
                 
                 Important Rules:
-                1. **Usage Inference:** If 'usage' is not explicitly stated, infer it from context keywords (e.g., 'Bentgrass'/'Putting Green' -> '그린', 'Zoysia' -> '페어웨이'). Default to '그린' if unsure.
-                2. **Type Matching:** You MUST choose the "type" field from the specific strings in the provided JSON hierarchy (e.g., "N-P-K 균형 비료", "토양 개량제 (Ca/Mg/S)"). Do NOT make up new types.
-                3. **Description:** Extract a good summary (2-3 sentences) for the description field.
-                4. Ensure all nutrient values are numbers (percentages). If not found, use 0. Extract micronutrients and amino acid % carefully.
+                1. If 'usage' is unknown or ambiguous, infer it from the context (e.g., 'fine turf' implies '그린', 'sports field' implies '페어웨이'). If completely unknown, default to '그린'.
+                2. If 'type' is unknown, infer it. 'Soil conditioner' -> '토양개량제', 'Functional' -> '기능성제제'. Default to '완효성'.
+                3. Extract amino acid percentage if mentioned (e.g., "Amino Acid 10%" -> 10).
+                4. Ensure all nutrient values are numbers (percentages). If not found, use 0.
                 5. Do NOT include any markdown formatting or explanations. Just the raw JSON.
                 
                 Input Data:
@@ -838,22 +580,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             text = text.replace(/```json/g, '').replace(/```/g, '').trim();
             const data = JSON.parse(text);
 
-            const parsedData = {
-                ...newFertilizer,
+            setNewFertilizer(prev => ({
+                ...prev,
                 ...data,
-                // Ensure usage is valid
+                // Ensure usage and type are valid enum values
                 usage: ['그린', '티', '페어웨이'].includes(data.usage) ? data.usage : '그린',
-                // Keep type as string, validation happens via UI selection mostly
-            };
-
-            setNewFertilizer(parsedData);
+                type: ['완효성', '액상', '수용성', '4종복합비료', '기능성제제', '토양개량제'].includes(data.type) ? data.type : '완효성',
+            }));
             
-            // Auto Save Logic
-            if (autoSaveAfterAi) {
-                // Must call save with the parsed data directly, as state update is async
-                await handleSaveFertilizer(parsedData);
-            }
-            
+            // Switch to form view implicitly by user seeing fields populated
         } catch (e) {
             console.error("AI Fill Error:", e);
             setAiError("분석에 실패했습니다. 올바른 데이터인지 확인해주세요.");
@@ -1126,72 +861,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                             </div>
                         ) : (
                             <div>
-                                <div className="flex flex-col sm:flex-row justify-between items-center mb-4 gap-4">
+                                <div className="flex justify-between items-center mb-4">
                                     <h3 className="font-bold text-slate-700">등록된 마스터 비료 목록 ({masterFertilizers.length})</h3>
-                                    <div className="flex gap-2">
-                                        <button 
-                                            onClick={() => setIsBulkModalOpen(true)}
-                                            className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white text-sm font-bold rounded-md hover:bg-blue-700 transition-colors"
-                                        >
-                                            <UploadIcon className="w-4 h-4" /> 엑셀 일괄 업로드
-                                        </button>
-                                        <button 
-                                            onClick={openAddModal}
-                                            className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white text-sm font-bold rounded-md hover:bg-green-700 transition-colors"
-                                        >
-                                            <PlusIcon /> 새 비료 추가
-                                        </button>
-                                    </div>
+                                    <button 
+                                        onClick={() => setIsAddFertilizerModalOpen(true)}
+                                        className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white text-sm font-bold rounded-md hover:bg-green-700 transition-colors"
+                                    >
+                                        <PlusIcon /> 새 비료 추가
+                                    </button>
                                 </div>
                                 
-                                {/* Filters UI */}
-                                <div className="bg-slate-50 p-3 rounded-lg border mb-4 flex flex-wrap gap-3 items-end text-sm">
-                                    <div className="flex-1 min-w-[200px]">
-                                        <label className="block text-xs text-slate-500 mb-1">검색</label>
-                                        <input 
-                                            type="text" 
-                                            placeholder="제품명 검색..." 
-                                            value={fertilizerSearchTerm}
-                                            onChange={e => setFertilizerSearchTerm(e.target.value)}
-                                            className="w-full p-2 border rounded"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs text-slate-500 mb-1">구분</label>
-                                        <select value={fertilizerFilterUsage} onChange={e => setFertilizerFilterUsage(e.target.value)} className="p-2 border rounded">
-                                            <option value="all">전체</option>
-                                            <option value="그린">그린</option>
-                                            <option value="티">티</option>
-                                            <option value="페어웨이">페어웨이</option>
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs text-slate-500 mb-1">정렬</label>
-                                        <select value={fertilizerSortField} onChange={e => setFertilizerSortField(e.target.value as any)} className="p-2 border rounded">
-                                            <option value="name">이름순</option>
-                                            <option value="price">가격순</option>
-                                            <option value="stock">재고순</option>
-                                            <option value="N">질소(N)순</option>
-                                        </select>
-                                    </div>
-                                </div>
-
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                                    {processedFertilizers.map((f, idx) => (
-                                        <div key={`${f.name}-${idx}`} className="border rounded-lg p-4 hover:shadow-md transition-shadow relative group bg-white">
-                                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                                                <button 
-                                                    onClick={() => openEditModal(idx, f)} 
-                                                    className="p-1 text-slate-400 hover:text-blue-500 bg-white rounded-full shadow-sm border"
-                                                    title="수정"
-                                                >
-                                                    <PencilIcon className="w-4 h-4" />
-                                                </button>
-                                                <button 
-                                                    onClick={() => handleRemoveFertilizer(idx)} 
-                                                    className="p-1 text-slate-400 hover:text-red-500 bg-white rounded-full shadow-sm border"
-                                                    title="삭제"
-                                                >
+                                    {masterFertilizers.map((f, idx) => (
+                                        <div key={`${f.name}-${idx}`} className="border rounded-lg p-4 hover:shadow-md transition-shadow relative group">
+                                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <button onClick={() => handleRemoveFertilizer(idx)} className="p-1 text-slate-400 hover:text-red-500 bg-white rounded-full shadow-sm border">
                                                     <TrashIcon />
                                                 </button>
                                             </div>
@@ -1201,14 +885,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                                                     f.usage === '티' ? 'bg-blue-100 text-blue-800' :
                                                     'bg-orange-100 text-orange-800'
                                                 }`}>{f.usage}</span>
-                                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 truncate max-w-[100px]">{f.type}</span>
-                                                <h4 className="font-bold text-slate-800 truncate flex-1" title={f.name}>{f.name}</h4>
+                                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{f.type}</span>
+                                                <h4 className="font-bold text-slate-800">{f.name}</h4>
                                             </div>
                                             <div className="text-xs text-slate-600 space-y-1">
-                                                <p>성분(NPK): <span className="font-mono">{f.N}-{f.P}-{f.K}</span></p>
+                                                <p>성분(NPK): {f.N}-{f.P}-{f.K}</p>
                                                 <p>포장: {f.unit} / 가격: {f.price.toLocaleString()}원</p>
                                                 <p>권장량: {f.rate}</p>
-                                                {f.description && <p className="text-slate-400 truncate border-t pt-1 mt-1">{f.description}</p>}
                                             </div>
                                         </div>
                                     ))}
@@ -1227,98 +910,83 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 />
             )}
 
-            {/* Add/Edit Fertilizer Modal */}
+            {/* Add Fertilizer Modal */}
             {isAddFertilizerModalOpen && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4" onClick={() => setIsAddFertilizerModalOpen(false)}>
                     <div className="bg-white rounded-lg shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
                         <div className="p-4 border-b flex justify-between items-center bg-slate-50">
-                            <h3 className="font-bold text-slate-800">
-                                {editingFertilizerIndex !== null ? '비료 정보 수정' : '새 비료 추가'}
-                            </h3>
+                            <h3 className="font-bold text-slate-800">새 비료 추가</h3>
                             <button onClick={() => setIsAddFertilizerModalOpen(false)}><CloseIcon /></button>
                         </div>
                         
                         <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                            {/* AI Smart Input Section (Only for Adding) */}
-                            {editingFertilizerIndex === null && (
-                                <div className="bg-purple-50 rounded-xl p-4 border border-purple-100">
-                                    <div className="flex justify-between items-center mb-3">
-                                        <h4 className="font-bold text-purple-900 flex items-center gap-2 text-sm">
-                                            <SparklesIcon /> AI 스마트 입력
-                                        </h4>
-                                        <label className="flex items-center gap-2 text-xs font-bold text-purple-800 cursor-pointer">
-                                            <input 
-                                                type="checkbox" 
-                                                checked={autoSaveAfterAi} 
-                                                onChange={(e) => setAutoSaveAfterAi(e.target.checked)}
-                                                className="rounded text-purple-600 focus:ring-purple-500"
-                                            />
-                                            분석 후 자동 저장
-                                        </label>
-                                    </div>
-                                    <div className="flex gap-2 mb-3">
-                                        <button 
-                                            onClick={() => setAiSmartTab('text')}
-                                            className={`flex-1 py-2 text-xs font-bold rounded transition-colors ${aiSmartTab === 'text' ? 'bg-purple-600 text-white shadow' : 'bg-white text-purple-600 border border-purple-200'}`}
-                                        >
-                                            텍스트 직접 입력
-                                        </button>
-                                        <button 
-                                            onClick={() => setAiSmartTab('file')}
-                                            className={`flex-1 py-2 text-xs font-bold rounded transition-colors ${aiSmartTab === 'file' ? 'bg-purple-600 text-white shadow' : 'bg-white text-purple-600 border border-purple-200'}`}
-                                        >
-                                            파일 업로드 (이미지/엑셀/PDF)
-                                        </button>
-                                    </div>
+                            {/* AI Smart Input Section */}
+                            <div className="bg-purple-50 rounded-xl p-4 border border-purple-100">
+                                <h4 className="font-bold text-purple-900 flex items-center gap-2 mb-3 text-sm">
+                                    <SparklesIcon /> AI 스마트 입력
+                                </h4>
+                                <div className="flex gap-2 mb-3">
+                                    <button 
+                                        onClick={() => setAiSmartTab('text')}
+                                        className={`flex-1 py-2 text-xs font-bold rounded transition-colors ${aiSmartTab === 'text' ? 'bg-purple-600 text-white shadow' : 'bg-white text-purple-600 border border-purple-200'}`}
+                                    >
+                                        텍스트 직접 입력
+                                    </button>
+                                    <button 
+                                        onClick={() => setAiSmartTab('file')}
+                                        className={`flex-1 py-2 text-xs font-bold rounded transition-colors ${aiSmartTab === 'file' ? 'bg-purple-600 text-white shadow' : 'bg-white text-purple-600 border border-purple-200'}`}
+                                    >
+                                        파일 업로드 (이미지/엑셀/PDF)
+                                    </button>
+                                </div>
 
-                                    {aiSmartTab === 'text' ? (
-                                        <div className="space-y-2">
-                                            <textarea
-                                                value={aiInputText}
-                                                onChange={e => setAiInputText(e.target.value)}
-                                                placeholder="제품 설명, 성분표 등을 복사해서 붙여넣으세요..."
-                                                className="w-full p-2 border border-purple-200 rounded text-sm h-24 focus:ring-2 focus:ring-purple-400 focus:outline-none"
+                                {aiSmartTab === 'text' ? (
+                                    <div className="space-y-2">
+                                        <textarea
+                                            value={aiInputText}
+                                            onChange={e => setAiInputText(e.target.value)}
+                                            placeholder="제품 설명, 성분표 등을 복사해서 붙여넣으세요..."
+                                            className="w-full p-2 border border-purple-200 rounded text-sm h-24 focus:ring-2 focus:ring-purple-400 focus:outline-none"
+                                        />
+                                        <button 
+                                            onClick={handleAiSmartFillText}
+                                            disabled={isAiFillLoading || !aiInputText.trim()}
+                                            className="w-full py-2 bg-purple-600 text-white font-bold rounded text-xs hover:bg-purple-700 transition-colors disabled:opacity-50 flex justify-center items-center gap-2"
+                                        >
+                                            {isAiFillLoading ? <div className="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full"></div> : <SparklesIcon />}
+                                            분석하여 자동 채우기
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-2">
+                                        <div className="border-2 border-dashed border-purple-300 rounded-lg p-6 text-center bg-white hover:bg-purple-50 transition-colors relative">
+                                            <input 
+                                                type="file" 
+                                                onChange={handleAiSmartFillFile}
+                                                accept="image/*,.xlsx,.xls,.csv,.pdf"
+                                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                                disabled={isAiFillLoading}
                                             />
-                                            <button 
-                                                onClick={handleAiSmartFillText}
-                                                disabled={isAiFillLoading || !aiInputText.trim()}
-                                                className="w-full py-2 bg-purple-600 text-white font-bold rounded text-xs hover:bg-purple-700 transition-colors disabled:opacity-50 flex justify-center items-center gap-2"
-                                            >
-                                                {isAiFillLoading ? <div className="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full"></div> : <SparklesIcon />}
-                                                분석하여 {autoSaveAfterAi ? '자동 저장' : '자동 채우기'}
-                                            </button>
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-2">
-                                            <div className="border-2 border-dashed border-purple-300 rounded-lg p-6 text-center bg-white hover:bg-purple-50 transition-colors relative">
-                                                <input 
-                                                    type="file" 
-                                                    onChange={handleAiSmartFillFile}
-                                                    accept="image/*,.xlsx,.xls,.csv,.pdf"
-                                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                                    disabled={isAiFillLoading}
-                                                />
-                                                <div className="flex flex-col items-center justify-center pointer-events-none">
-                                                    {isAiFillLoading ? (
-                                                        <div className="animate-spin h-8 w-8 border-4 border-purple-500 border-t-transparent rounded-full mb-2"></div>
-                                                    ) : (
-                                                        <UploadIcon className="h-8 w-8 text-purple-400 mb-2" />
-                                                    )}
-                                                    <p className="text-xs font-bold text-purple-700">
-                                                        {isAiFillLoading ? '파일 분석 중...' : '클릭 또는 드래그하여 파일 업로드'}
-                                                    </p>
-                                                    <p className="text-[10px] text-purple-400 mt-1">
-                                                        지원: 이미지, Excel, PDF, CSV
-                                                    </p>
-                                                </div>
+                                            <div className="flex flex-col items-center justify-center pointer-events-none">
+                                                {isAiFillLoading ? (
+                                                    <div className="animate-spin h-8 w-8 border-4 border-purple-500 border-t-transparent rounded-full mb-2"></div>
+                                                ) : (
+                                                    <UploadIcon className="h-8 w-8 text-purple-400 mb-2" />
+                                                )}
+                                                <p className="text-xs font-bold text-purple-700">
+                                                    {isAiFillLoading ? '파일 분석 중...' : '클릭 또는 드래그하여 파일 업로드'}
+                                                </p>
+                                                <p className="text-[10px] text-purple-400 mt-1">
+                                                    지원: 이미지, Excel, PDF, CSV
+                                                </p>
                                             </div>
                                         </div>
-                                    )}
-                                    {aiError && (
-                                        <p className="text-xs text-red-500 mt-2 text-center">{aiError}</p>
-                                    )}
-                                </div>
-                            )}
+                                    </div>
+                                )}
+                                {aiError && (
+                                    <p className="text-xs text-red-500 mt-2 text-center">{aiError}</p>
+                                )}
+                            </div>
 
                             <div className="border-t pt-4">
                                 <h4 className="font-bold text-slate-700 mb-3 text-sm">상세 정보 입력</h4>
@@ -1327,18 +995,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                                         <label className="block text-xs font-bold text-slate-600 mb-1">제품명</label>
                                         <input type="text" className="w-full border p-2 rounded" value={newFertilizer.name || ''} onChange={e => setNewFertilizer({...newFertilizer, name: e.target.value})} placeholder="예: HPG-Special" />
                                     </div>
-                                    
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-600 mb-1">상세 설명</label>
-                                        <textarea 
-                                            className="w-full border p-2 rounded text-sm" 
-                                            rows={3}
-                                            value={newFertilizer.description || ''} 
-                                            onChange={e => setNewFertilizer({...newFertilizer, description: e.target.value})} 
-                                            placeholder="제품의 특징이나 상세 설명을 입력하세요." 
-                                        />
-                                    </div>
-
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>
                                             <label className="block text-xs font-bold text-slate-600 mb-1">용도</label>
@@ -1350,28 +1006,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                                         </div>
                                         <div>
                                             <label className="block text-xs font-bold text-slate-600 mb-1">타입</label>
-                                            <select 
-                                                className="w-full border p-2 rounded" 
-                                                value={newFertilizer.type} 
-                                                onChange={e => setNewFertilizer({...newFertilizer, type: e.target.value as any})}
-                                            >
-                                                <option value="">타입 선택</option>
-                                                {Object.entries(FERTILIZER_TYPE_GROUPS).map(([group, types]) => (
-                                                    <optgroup label={group} key={group}>
-                                                        {types.map(t => (
-                                                            <option key={t} value={t}>{t}</option>
-                                                        ))}
-                                                    </optgroup>
-                                                ))}
-                                                <optgroup label="기타/기존">
-                                                    <option value="완효성">완효성</option>
-                                                    <option value="액상">액상</option>
-                                                    <option value="수용성">수용성</option>
-                                                    <option value="4종복합비료">4종복합</option>
-                                                    <option value="기능성제제">기능성제제</option>
-                                                    <option value="토양개량제">토양개량제</option>
-                                                    <option value="기타">기타</option>
-                                                </optgroup>
+                                            <select className="w-full border p-2 rounded" value={newFertilizer.type} onChange={e => setNewFertilizer({...newFertilizer, type: e.target.value as any})}>
+                                                <option value="완효성">완효성</option>
+                                                <option value="액상">액상</option>
+                                                <option value="수용성">수용성</option>
+                                                <option value="4종복합비료">4종복합</option>
+                                                <option value="기능성제제">기능성제제</option>
+                                                <option value="토양개량제">토양개량제</option>
                                             </select>
                                         </div>
                                     </div>
@@ -1421,115 +1062,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                                         <label className="block text-xs font-bold text-slate-600 mb-1">권장사용량</label>
                                         <input type="text" className="w-full border p-2 rounded" value={newFertilizer.rate || ''} onChange={e => setNewFertilizer({...newFertilizer, rate: e.target.value})} placeholder="예: 20g/㎡" />
                                     </div>
-                                    <button 
-                                        onClick={() => handleSaveFertilizer()} 
-                                        className="w-full bg-blue-600 text-white font-bold py-3 rounded hover:bg-blue-700 shadow-md transition-colors"
-                                    >
-                                        {editingFertilizerIndex !== null ? '수정 내용 저장' : '비료 추가하기'}
-                                    </button>
+                                    <button onClick={handleAddFertilizer} className="w-full bg-blue-600 text-white font-bold py-3 rounded hover:bg-blue-700 shadow-md">추가하기</button>
                                 </div>
                             </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Bulk Upload Modal */}
-            {isBulkModalOpen && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4" onClick={() => setIsBulkModalOpen(false)}>
-                    <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
-                        <div className="p-4 border-b flex justify-between items-center bg-slate-50">
-                            <h3 className="font-bold text-slate-800 flex items-center gap-2">
-                                <UploadIcon className="w-5 h-5" /> 엑셀 일괄 업로드
-                            </h3>
-                            <button onClick={() => setIsBulkModalOpen(false)}><CloseIcon /></button>
-                        </div>
-                        
-                        <div className="p-6 overflow-y-auto flex-1">
-                            <div className="space-y-6">
-                                <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg text-sm text-blue-800">
-                                    <p className="font-bold mb-2">💡 사용 가이드</p>
-                                    <ul className="list-disc pl-5 space-y-1">
-                                        <li>대량의 비료 데이터를 엑셀 파일로 한 번에 등록할 수 있습니다.</li>
-                                        <li>아래 <strong>'양식 다운로드'</strong>를 통해 제공되는 형식을 사용해주세요.</li>
-                                        <li>AI 분석을 원하시면, 일반 엑셀이나 PDF 파일도 업로드 가능합니다. (시간이 더 소요될 수 있습니다)</li>
-                                    </ul>
-                                    <button 
-                                        onClick={handleDownloadTemplate}
-                                        className="mt-3 flex items-center gap-2 px-3 py-1.5 bg-white border border-blue-300 rounded text-blue-700 font-bold hover:bg-blue-100 transition-colors text-xs shadow-sm"
-                                    >
-                                        <DownloadIcon className="w-3 h-3" /> 엑셀 등록 양식 다운로드
-                                    </button>
-                                </div>
-
-                                <div className="border-2 border-dashed border-slate-300 rounded-xl p-8 text-center bg-slate-50 hover:bg-white transition-colors relative group">
-                                    <input 
-                                        type="file" 
-                                        onChange={handleBulkExcelUpload}
-                                        accept=".xlsx, .xls, .csv, .pdf"
-                                        className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                        disabled={isBulkLoading}
-                                    />
-                                    <div className="flex flex-col items-center justify-center pointer-events-none">
-                                        {isBulkLoading ? (
-                                            <div className="animate-spin h-10 w-10 border-4 border-blue-500 border-t-transparent rounded-full mb-3"></div>
-                                        ) : (
-                                            <UploadIcon className="h-10 w-10 text-slate-400 group-hover:text-blue-500 transition-colors mb-3" />
-                                        )}
-                                        <p className="text-sm font-bold text-slate-700">
-                                            {isBulkLoading ? '파일 분석 및 데이터 추출 중...' : '엑셀 또는 PDF 파일 업로드'}
-                                        </p>
-                                        <p className="text-xs text-slate-400 mt-1">
-                                            드래그 앤 드롭 또는 클릭하여 파일 선택
-                                        </p>
-                                    </div>
-                                </div>
-
-                                {bulkPreviewData.length > 0 && (
-                                    <div className="border rounded-lg overflow-hidden">
-                                        <div className="bg-green-50 p-3 border-b border-green-100 flex justify-between items-center">
-                                            <h4 className="font-bold text-green-800 text-sm">✅ 분석된 데이터 미리보기 ({bulkPreviewData.length}건)</h4>
-                                        </div>
-                                        <div className="max-h-60 overflow-y-auto">
-                                            <table className="w-full text-xs text-left">
-                                                <thead className="bg-slate-100 text-slate-600 sticky top-0">
-                                                    <tr>
-                                                        <th className="p-2">제품명</th>
-                                                        <th className="p-2">구분/타입</th>
-                                                        <th className="p-2">성분(N-P-K)</th>
-                                                        <th className="p-2">가격/포장</th>
-                                                    </tr>
-                                                </thead>
-                                                <tbody className="divide-y divide-slate-100">
-                                                    {bulkPreviewData.map((item, idx) => (
-                                                        <tr key={idx} className="hover:bg-slate-50">
-                                                            <td className="p-2 font-medium">{item.name}</td>
-                                                            <td className="p-2 text-slate-500">{item.usage} / {item.type}</td>
-                                                            <td className="p-2 font-mono">{item.N}-{item.P}-{item.K}</td>
-                                                            <td className="p-2">{item.price.toLocaleString()}원 ({item.unit})</td>
-                                                        </tr>
-                                                    ))}
-                                                </tbody>
-                                            </table>
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                        <div className="p-4 border-t bg-slate-50 flex justify-end gap-2">
-                            <button 
-                                onClick={() => setIsBulkModalOpen(false)}
-                                className="px-4 py-2 bg-white border border-slate-300 text-slate-700 font-bold rounded hover:bg-slate-50 text-sm"
-                            >
-                                취소
-                            </button>
-                            <button 
-                                onClick={handleSaveBulkData}
-                                disabled={bulkPreviewData.length === 0}
-                                className="px-4 py-2 bg-blue-600 text-white font-bold rounded hover:bg-blue-700 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                {bulkPreviewData.length}개 비료 일괄 등록
-                            </button>
                         </div>
                     </div>
                 </div>
