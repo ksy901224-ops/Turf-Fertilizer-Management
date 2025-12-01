@@ -344,6 +344,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         usage: '그린'
     });
 
+    // Bulk Upload State
+    const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
+    const [bulkPreviewData, setBulkPreviewData] = useState<Fertilizer[]>([]);
+
     // Sorting and Filtering State for Approved Users
     const [userSearchTerm, setUserSearchTerm] = useState('');
     const [userSortField, setUserSortField] = useState<keyof UserDataSummary>('lastActivity');
@@ -375,6 +379,26 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             setIsLoading(false);
         }
     };
+
+    // Pre-fill AI Input with current fertilizer data when editing
+    useEffect(() => {
+        if (editingFertilizerIndex !== null) {
+            const fertilizerToEdit = newFertilizer;
+            // Create a readable text representation for the AI context
+            const fertilizerContext = `
+                [Current Product Info to Edit]
+                Name: ${fertilizerToEdit.name}
+                Usage: ${fertilizerToEdit.usage}
+                Type: ${fertilizerToEdit.type}
+                NPK: ${fertilizerToEdit.N}-${fertilizerToEdit.P}-${fertilizerToEdit.K}
+                Rate: ${fertilizerToEdit.rate}
+                Description: ${fertilizerToEdit.description || ''}
+            `;
+            setAiInputText(fertilizerContext);
+        } else {
+            setAiInputText('');
+        }
+    }, [editingFertilizerIndex, newFertilizer]);
 
     const pendingUsersList = useMemo(() => allUsersData.filter(u => !u.isApproved), [allUsersData]);
     const approvedUsersList = useMemo(() => allUsersData.filter(u => u.isApproved), [allUsersData]);
@@ -574,6 +598,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         }
     };
 
+    const handleBulkSave = async () => {
+        if (bulkPreviewData.length === 0) return;
+        
+        // Merge bulk data into current list
+        const newList = [...masterFertilizers, ...bulkPreviewData];
+        await api.saveFertilizers('admin', newList);
+        setMasterFertilizers(newList);
+        
+        setBulkPreviewData([]);
+        setIsBulkModalOpen(false);
+        alert(`${bulkPreviewData.length}개의 비료가 추가되었습니다.`);
+    };
+
     // --- AI Smart Fill Logic ---
 
     const processAiRequest = async (promptText: string, inlineDataParts: any[] = []) => {
@@ -585,7 +622,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             
             const prompt = `
                 Analyze the provided fertilizer information (Text, Image, Excel, PDF, or CSV).
-                Extract the following details and return ONLY a JSON object:
+                
+                **Task:**
+                If the input contains MULTIPLE fertilizer products (e.g. a list, table, or catalog), output a JSON ARRAY of objects.
+                If it contains only ONE product, output a SINGLE JSON object.
+                
+                **Extraction Schema (for each item):**
                 {
                     "name": "Product Name",
                     "usage": "One of ['그린', '티', '페어웨이']",
@@ -603,9 +645,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                     "aminoAcid": Number (Percentage of Amino Acids if present)
                 }
                 
-                Important Rules:
+                **Important Rules:**
                 1. **Usage Inference:** If 'usage' is not explicitly stated, infer it from context keywords (e.g., 'Bentgrass'/'Putting Green' -> '그린', 'Zoysia' -> '페어웨이'). Default to '그린' if unsure.
-                2. **Type Matching:** You MUST choose the "type" field from the specific strings in the provided JSON hierarchy (e.g., "N-P-K 균형 비료", "토양 개량제 (Ca/Mg/S)"). Do NOT make up new types.
+                2. **Type Matching:** You MUST choose the "type" field from the specific strings in the provided JSON hierarchy.
                 3. **Description:** Extract a good summary (2-3 sentences) for the description field.
                 4. Ensure all nutrient values are numbers (percentages). If not found, use 0. Extract micronutrients and amino acid % carefully.
                 5. Do NOT include any markdown formatting or explanations. Just the raw JSON.
@@ -632,20 +674,49 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             text = text.replace(/```json/g, '').replace(/```/g, '').trim();
             const data = JSON.parse(text);
 
-            const parsedData = {
-                ...newFertilizer,
-                ...data,
-                // Ensure usage is valid
-                usage: ['그린', '티', '페어웨이'].includes(data.usage) ? data.usage : '그린',
-                // Keep type as string, validation happens via UI selection mostly
-            };
-
-            setNewFertilizer(parsedData);
-            
-            // Auto Save Logic
-            if (autoSaveAfterAi) {
-                // Must call save with the parsed data directly, as state update is async
-                await handleSaveFertilizer(parsedData);
+            if (Array.isArray(data)) {
+                // Handle Bulk Import List
+                const validList: Fertilizer[] = data.map(item => ({
+                     name: item.name || 'Unknown Product',
+                     usage: ['그린', '티', '페어웨이'].includes(item.usage) ? item.usage : '그린',
+                     type: item.type || '기타',
+                     N: Number(item.N || 0), P: Number(item.P || 0), K: Number(item.K || 0),
+                     Ca: Number(item.Ca || 0), Mg: Number(item.Mg || 0), S: Number(item.S || 0),
+                     Fe: Number(item.Fe || 0), Mn: Number(item.Mn || 0), Zn: Number(item.Zn || 0),
+                     Cu: Number(item.Cu || 0), B: Number(item.B || 0), Mo: Number(item.Mo || 0),
+                     Cl: Number(item.Cl || 0), Na: Number(item.Na || 0), Si: Number(item.Si || 0),
+                     Ni: Number(item.Ni || 0), Co: Number(item.Co || 0), V: Number(item.V || 0),
+                     aminoAcid: Number(item.aminoAcid || 0),
+                     price: Number(item.price || 0),
+                     unit: item.unit || '20kg',
+                     rate: item.rate || '20g/㎡',
+                     stock: 0,
+                     lowStockAlertEnabled: false,
+                     description: item.description || ''
+                }));
+                
+                setBulkPreviewData(validList);
+                setIsBulkModalOpen(true);
+                // Close single add modal if open
+                setIsAddFertilizerModalOpen(false);
+                
+            } else {
+                // Single Item Update
+                const parsedData = {
+                    ...newFertilizer,
+                    ...data,
+                    // Ensure usage is valid
+                    usage: ['그린', '티', '페어웨이'].includes(data.usage) ? data.usage : '그린',
+                    // Keep type as string, validation happens via UI selection mostly
+                };
+    
+                setNewFertilizer(parsedData);
+                
+                // Auto Save Logic
+                if (autoSaveAfterAi) {
+                    // Must call save with the parsed data directly, as state update is async
+                    await handleSaveFertilizer(parsedData);
+                }
             }
             
         } catch (e) {
@@ -981,6 +1052,46 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 />
             )}
 
+             {/* Bulk Preview Modal */}
+             {isBulkModalOpen && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4" onClick={() => setIsBulkModalOpen(false)}>
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+                         <div className="p-4 border-b flex justify-between items-center bg-slate-50">
+                            <h3 className="font-bold text-lg text-slate-800">📋 대량 비료 등록 미리보기 ({bulkPreviewData.length}개)</h3>
+                            <button onClick={() => setIsBulkModalOpen(false)}><CloseIcon /></button>
+                        </div>
+                        <div className="flex-1 overflow-auto p-4">
+                            <table className="w-full text-sm text-left border-collapse">
+                                <thead className="bg-slate-100 text-slate-700 sticky top-0">
+                                    <tr>
+                                        <th className="p-2 border">제품명</th>
+                                        <th className="p-2 border">용도</th>
+                                        <th className="p-2 border">타입</th>
+                                        <th className="p-2 border">NPK</th>
+                                        <th className="p-2 border">단위/가격</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {bulkPreviewData.map((item, i) => (
+                                        <tr key={i} className="border-b hover:bg-slate-50">
+                                            <td className="p-2 font-medium">{item.name}</td>
+                                            <td className="p-2">{item.usage}</td>
+                                            <td className="p-2">{item.type}</td>
+                                            <td className="p-2 font-mono">{item.N}-{item.P}-{item.K}</td>
+                                            <td className="p-2">{item.unit} / {item.price.toLocaleString()}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div className="p-4 border-t bg-slate-50 flex justify-end gap-2">
+                            <button onClick={() => setIsBulkModalOpen(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded font-semibold">취소</button>
+                            <button onClick={handleBulkSave} className="px-4 py-2 bg-blue-600 text-white rounded font-bold hover:bg-blue-700">일괄 등록하기</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* Add/Edit Fertilizer Modal */}
             {isAddFertilizerModalOpen && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4" onClick={() => setIsAddFertilizerModalOpen(false)}>
@@ -993,86 +1104,84 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                         </div>
                         
                         <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                            {/* AI Smart Input Section (Only for Adding) */}
-                            {editingFertilizerIndex === null && (
-                                <div className="bg-purple-50 rounded-xl p-4 border border-purple-100">
-                                    <div className="flex justify-between items-center mb-3">
-                                        <h4 className="font-bold text-purple-900 flex items-center gap-2 text-sm">
-                                            <SparklesIcon /> AI 스마트 입력
-                                        </h4>
-                                        <label className="flex items-center gap-2 text-xs font-bold text-purple-800 cursor-pointer">
-                                            <input 
-                                                type="checkbox" 
-                                                checked={autoSaveAfterAi} 
-                                                onChange={(e) => setAutoSaveAfterAi(e.target.checked)}
-                                                className="rounded text-purple-600 focus:ring-purple-500"
-                                            />
-                                            분석 후 자동 저장
-                                        </label>
-                                    </div>
-                                    <div className="flex gap-2 mb-3">
-                                        <button 
-                                            onClick={() => setAiSmartTab('text')}
-                                            className={`flex-1 py-2 text-xs font-bold rounded transition-colors ${aiSmartTab === 'text' ? 'bg-purple-600 text-white shadow' : 'bg-white text-purple-600 border border-purple-200'}`}
-                                        >
-                                            텍스트 직접 입력
-                                        </button>
-                                        <button 
-                                            onClick={() => setAiSmartTab('file')}
-                                            className={`flex-1 py-2 text-xs font-bold rounded transition-colors ${aiSmartTab === 'file' ? 'bg-purple-600 text-white shadow' : 'bg-white text-purple-600 border border-purple-200'}`}
-                                        >
-                                            파일 업로드 (이미지/엑셀/PDF)
-                                        </button>
-                                    </div>
+                            {/* AI Smart Input Section */}
+                            <div className="bg-purple-50 rounded-xl p-4 border border-purple-100">
+                                <div className="flex justify-between items-center mb-3">
+                                    <h4 className="font-bold text-purple-900 flex items-center gap-2 text-sm">
+                                        <SparklesIcon /> AI 스마트 입력 {editingFertilizerIndex !== null && <span className="text-[10px] text-purple-600 bg-white px-1.5 rounded border border-purple-200 ml-1">수정 모드</span>}
+                                    </h4>
+                                    <label className="flex items-center gap-2 text-xs font-bold text-purple-800 cursor-pointer">
+                                        <input 
+                                            type="checkbox" 
+                                            checked={autoSaveAfterAi} 
+                                            onChange={(e) => setAutoSaveAfterAi(e.target.checked)}
+                                            className="rounded text-purple-600 focus:ring-purple-500"
+                                        />
+                                        분석 후 자동 저장
+                                    </label>
+                                </div>
+                                <div className="flex gap-2 mb-3">
+                                    <button 
+                                        onClick={() => setAiSmartTab('text')}
+                                        className={`flex-1 py-2 text-xs font-bold rounded transition-colors ${aiSmartTab === 'text' ? 'bg-purple-600 text-white shadow' : 'bg-white text-purple-600 border border-purple-200'}`}
+                                    >
+                                        텍스트 직접 입력
+                                    </button>
+                                    <button 
+                                        onClick={() => setAiSmartTab('file')}
+                                        className={`flex-1 py-2 text-xs font-bold rounded transition-colors ${aiSmartTab === 'file' ? 'bg-purple-600 text-white shadow' : 'bg-white text-purple-600 border border-purple-200'}`}
+                                    >
+                                        파일 업로드 (이미지/엑셀/PDF)
+                                    </button>
+                                </div>
 
-                                    {aiSmartTab === 'text' ? (
-                                        <div className="space-y-2">
-                                            <textarea
-                                                value={aiInputText}
-                                                onChange={e => setAiInputText(e.target.value)}
-                                                placeholder="제품 설명, 성분표 등을 복사해서 붙여넣으세요..."
-                                                className="w-full p-2 border border-purple-200 rounded text-sm h-24 focus:ring-2 focus:ring-purple-400 focus:outline-none"
+                                {aiSmartTab === 'text' ? (
+                                    <div className="space-y-2">
+                                        <textarea
+                                            value={aiInputText}
+                                            onChange={e => setAiInputText(e.target.value)}
+                                            placeholder="제품 설명, 성분표, 또는 여러 제품 목록을 붙여넣으세요..."
+                                            className="w-full p-2 border border-purple-200 rounded text-sm h-24 focus:ring-2 focus:ring-purple-400 focus:outline-none"
+                                        />
+                                        <button 
+                                            onClick={handleAiSmartFillText}
+                                            disabled={isAiFillLoading || !aiInputText.trim()}
+                                            className="w-full py-2 bg-purple-600 text-white font-bold rounded text-xs hover:bg-purple-700 transition-colors disabled:opacity-50 flex justify-center items-center gap-2"
+                                        >
+                                            {isAiFillLoading ? <div className="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full"></div> : <SparklesIcon />}
+                                            분석하여 {editingFertilizerIndex !== null ? '수정 내용 적용' : '자동 채우기 (대량 가능)'}
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-2">
+                                        <div className="border-2 border-dashed border-purple-300 rounded-lg p-6 text-center bg-white hover:bg-purple-50 transition-colors relative">
+                                            <input 
+                                                type="file" 
+                                                onChange={handleAiSmartFillFile}
+                                                accept="image/*,.xlsx,.xls,.csv,.pdf"
+                                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                                disabled={isAiFillLoading}
                                             />
-                                            <button 
-                                                onClick={handleAiSmartFillText}
-                                                disabled={isAiFillLoading || !aiInputText.trim()}
-                                                className="w-full py-2 bg-purple-600 text-white font-bold rounded text-xs hover:bg-purple-700 transition-colors disabled:opacity-50 flex justify-center items-center gap-2"
-                                            >
-                                                {isAiFillLoading ? <div className="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full"></div> : <SparklesIcon />}
-                                                분석하여 {autoSaveAfterAi ? '자동 저장' : '자동 채우기'}
-                                            </button>
-                                        </div>
-                                    ) : (
-                                        <div className="space-y-2">
-                                            <div className="border-2 border-dashed border-purple-300 rounded-lg p-6 text-center bg-white hover:bg-purple-50 transition-colors relative">
-                                                <input 
-                                                    type="file" 
-                                                    onChange={handleAiSmartFillFile}
-                                                    accept="image/*,.xlsx,.xls,.csv,.pdf"
-                                                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-                                                    disabled={isAiFillLoading}
-                                                />
-                                                <div className="flex flex-col items-center justify-center pointer-events-none">
-                                                    {isAiFillLoading ? (
-                                                        <div className="animate-spin h-8 w-8 border-4 border-purple-500 border-t-transparent rounded-full mb-2"></div>
-                                                    ) : (
-                                                        <UploadIcon className="h-8 w-8 text-purple-400 mb-2" />
-                                                    )}
-                                                    <p className="text-xs font-bold text-purple-700">
-                                                        {isAiFillLoading ? '파일 분석 중...' : '클릭 또는 드래그하여 파일 업로드'}
-                                                    </p>
-                                                    <p className="text-[10px] text-purple-400 mt-1">
-                                                        지원: 이미지, Excel, PDF, CSV
-                                                    </p>
-                                                </div>
+                                            <div className="flex flex-col items-center justify-center pointer-events-none">
+                                                {isAiFillLoading ? (
+                                                    <div className="animate-spin h-8 w-8 border-4 border-purple-500 border-t-transparent rounded-full mb-2"></div>
+                                                ) : (
+                                                    <UploadIcon className="h-8 w-8 text-purple-400 mb-2" />
+                                                )}
+                                                <p className="text-xs font-bold text-purple-700">
+                                                    {isAiFillLoading ? '파일 분석 중...' : '클릭 또는 드래그하여 파일 업로드'}
+                                                </p>
+                                                <p className="text-[10px] text-purple-400 mt-1">
+                                                    지원: 이미지, Excel, PDF, CSV (대량 목록 포함)
+                                                </p>
                                             </div>
                                         </div>
-                                    )}
-                                    {aiError && (
-                                        <p className="text-xs text-red-500 mt-2 text-center">{aiError}</p>
-                                    )}
-                                </div>
-                            )}
+                                    </div>
+                                )}
+                                {aiError && (
+                                    <p className="text-xs text-red-500 mt-2 text-center">{aiError}</p>
+                                )}
+                            </div>
 
                             <div className="border-t pt-4">
                                 <h4 className="font-bold text-slate-700 mb-3 text-sm">상세 정보 입력</h4>
@@ -1189,513 +1298,4 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             )}
         </div>
     );
-};import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import * as api from './api';
-import * as XLSX from 'xlsx';
-import { GoogleGenAI } from '@google/genai';
-import { UserDataSummary, Fertilizer } from './types';
-import { 
-    LogoutIcon, DashboardIcon, UsersIcon, PlusIcon, TrashIcon, CloseIcon, 
-    ClipboardListIcon, CameraIcon, DocumentSearchIcon, UploadIcon, 
-    SparklesIcon, DownloadIcon, PencilIcon 
-} from './icons';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { FERTILIZER_TYPE_GROUPS } from './constants';
-
-// --- Types & Constants ---
-const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
-
-const DEFAULT_FERTILIZER: Partial<Fertilizer> = {
-    type: '완효성',
-    usage: '그린'
 };
-
-// --- Helper Functions ---
-const readFileAsText = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (e) => resolve(e.target?.result as string);
-        reader.onerror = reject;
-        reader.readAsText(file);
-    });
-};
-
-const readFileAsArrayBuffer = (file: File): Promise<ArrayBuffer> => {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (e) => resolve(e.target?.result as ArrayBuffer);
-        reader.onerror = reject;
-        reader.readAsArrayBuffer(file);
-    });
-};
-
-const readFileAsBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const result = e.target?.result as string;
-            resolve(result.split(',')[1]);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-    });
-};
-
-// --- Sub-Component: Fertilizer Form Modal ---
-// 분리 목적: 폼 상태 관리(AI 입력, 텍스트 필드 등)를 메인 대시보드와 격리
-interface FertilizerFormModalProps {
-    isOpen: boolean;
-    onClose: () => void;
-    onSave: (data: Partial<Fertilizer>) => Promise<void>;
-    initialData?: Fertilizer; // If editing
-    isEditing: boolean;
-}
-
-const FertilizerFormModal: React.FC<FertilizerFormModalProps> = ({ isOpen, onClose, onSave, initialData, isEditing }) => {
-    const [formData, setFormData] = useState<Partial<Fertilizer>>(DEFAULT_FERTILIZER);
-    
-    // AI State within Modal
-    const [aiInputText, setAiInputText] = useState('');
-    const [isAiFillLoading, setIsAiFillLoading] = useState(false);
-    const [aiSmartTab, setAiSmartTab] = useState<'text' | 'file'>('text');
-    const [aiError, setAiError] = useState<string | null>(null);
-    const [autoSaveAfterAi, setAutoSaveAfterAi] = useState(false);
-
-    // Reset or Populate Form
-    useEffect(() => {
-        if (isOpen) {
-            if (isEditing && initialData) {
-                setFormData({ ...initialData });
-                // Pre-fill AI context for editing
-                const context = `
-[Current Product Info]
-Name: ${initialData.name}
-Usage: ${initialData.usage}
-Type: ${initialData.type}
-NPK: ${initialData.N}-${initialData.P}-${initialData.K}
-Rate: ${initialData.rate}
-Description: ${initialData.description || ''}
-                `.trim();
-                setAiInputText(context);
-            } else {
-                setFormData(DEFAULT_FERTILIZER);
-                setAiInputText('');
-            }
-            setAiError(null);
-        }
-    }, [isOpen, isEditing, initialData]);
-
-    const handleInputChange = (field: keyof Fertilizer, value: any) => {
-        setFormData(prev => ({ ...prev, [field]: value }));
-    };
-
-    const handleSave = () => {
-        onSave(formData);
-    };
-
-    // AI Processing Logic
-    const processAiRequest = async (promptText: string, inlineDataParts: any[] = []) => {
-        setIsAiFillLoading(true);
-        setAiError(null);
-        try {
-            const apiKey = process.env.API_KEY;
-            if (!apiKey) throw new Error("API Key is missing");
-
-            const ai = new GoogleGenAI({ apiKey });
-            const groupsJSON = JSON.stringify(FERTILIZER_TYPE_GROUPS);
-            
-            const systemPrompt = `
-                Analyze the fertilizer info. Extract details into JSON:
-                {
-                    "name": "Product Name",
-                    "usage": "One of ['그린', '티', '페어웨이']",
-                    "type": "Sub-category from: ${groupsJSON} or '기타'",
-                    "unit": "e.g., '20kg'",
-                    "price": Number,
-                    "rate": "e.g., '20g/㎡'",
-                    "description": "Summary in Korean",
-                    "N": Number, "P": Number, "K": Number,
-                    "Ca": Number, "Mg": Number, "S": Number, "Fe": Number, "Mn": Number, 
-                    "Zn": Number, "Cu": Number, "B": Number, "Mo": Number, 
-                    "Cl": Number, "Na": Number, "Si": Number, "Ni": Number, "Co": Number, "V": Number,
-                    "aminoAcid": Number
-                }
-                Rules: Infer usage if missing. Default type to '완효성'. Return ONLY JSON.
-                Input: ${promptText}
-            `;
-
-            const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: { parts: [{ text: systemPrompt }, ...inlineDataParts] }
-            });
-
-            let text = response.text || "{}";
-            text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-            const data = JSON.parse(text);
-
-            const mergedData = {
-                ...formData,
-                ...data,
-                usage: ['그린', '티', '페어웨이'].includes(data.usage) ? data.usage : '그린',
-            };
-
-            setFormData(mergedData);
-            if (autoSaveAfterAi) {
-                await onSave(mergedData);
-            }
-        } catch (e) {
-            console.error("AI Error", e);
-            setAiError("AI 분석 실패. 데이터를 확인해주세요.");
-        } finally {
-            setIsAiFillLoading(false);
-        }
-    };
-
-    const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        try {
-            if (file.name.match(/\.(xlsx|xls|csv)$/)) {
-                const data = await readFileAsArrayBuffer(file);
-                const wb = XLSX.read(data, { type: 'array' });
-                const ws = wb.Sheets[wb.SheetNames[0]];
-                const csv = XLSX.utils.sheet_to_csv(ws);
-                await processAiRequest(`Spreadsheet Data:\n${csv}`);
-            } else if (file.type.startsWith('image/') || file.type === 'application/pdf') {
-                const base64 = await readFileAsBase64(file);
-                await processAiRequest("Analyze document", [{ inlineData: { data: base64, mimeType: file.type } }]);
-            } else {
-                const text = await readFileAsText(file);
-                await processAiRequest(`Text Content:\n${text}`);
-            }
-        } catch (err) {
-            setAiError("파일 처리 중 오류가 발생했습니다.");
-        }
-    };
-
-    if (!isOpen) return null;
-
-    return (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4" onClick={onClose}>
-            <div className="bg-white rounded-lg shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
-                <div className="p-4 border-b flex justify-between items-center bg-slate-50">
-                    <h3 className="font-bold text-slate-800">{isEditing ? '비료 정보 수정' : '새 비료 추가'}</h3>
-                    <button onClick={onClose}><CloseIcon /></button>
-                </div>
-                
-                <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                    {/* AI Section */}
-                    <div className="bg-purple-50 rounded-xl p-4 border border-purple-100">
-                        <div className="flex justify-between items-center mb-3">
-                            <h4 className="font-bold text-purple-900 flex items-center gap-2 text-sm">
-                                <SparklesIcon /> AI 스마트 입력
-                            </h4>
-                            <label className="flex items-center gap-2 text-xs font-bold text-purple-800 cursor-pointer">
-                                <input type="checkbox" checked={autoSaveAfterAi} onChange={(e) => setAutoSaveAfterAi(e.target.checked)} className="rounded text-purple-600" />
-                                분석 후 자동 저장
-                            </label>
-                        </div>
-                        {/* Tabs */}
-                        <div className="flex gap-2 mb-3">
-                            <button onClick={() => setAiSmartTab('text')} className={`flex-1 py-2 text-xs font-bold rounded ${aiSmartTab === 'text' ? 'bg-purple-600 text-white' : 'bg-white text-purple-600 border border-purple-200'}`}>텍스트</button>
-                            <button onClick={() => setAiSmartTab('file')} className={`flex-1 py-2 text-xs font-bold rounded ${aiSmartTab === 'file' ? 'bg-purple-600 text-white' : 'bg-white text-purple-600 border border-purple-200'}`}>파일 업로드</button>
-                        </div>
-
-                        {aiSmartTab === 'text' ? (
-                            <div className="space-y-2">
-                                <textarea value={aiInputText} onChange={e => setAiInputText(e.target.value)} placeholder="제품 정보를 입력하세요..." className="w-full p-2 border border-purple-200 rounded text-sm h-24 focus:outline-none" />
-                                <button onClick={() => processAiRequest(aiInputText)} disabled={isAiFillLoading || !aiInputText.trim()} className="w-full py-2 bg-purple-600 text-white font-bold rounded text-xs hover:bg-purple-700 transition-colors disabled:opacity-50 flex justify-center items-center gap-2">
-                                    {isAiFillLoading ? <div className="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full"></div> : <SparklesIcon />}
-                                    {isEditing ? '분석하여 수정 적용' : '분석하여 자동 채우기'}
-                                </button>
-                            </div>
-                        ) : (
-                            <div className="border-2 border-dashed border-purple-300 rounded-lg p-6 text-center bg-white relative">
-                                <input type="file" onChange={handleFileChange} accept="image/*,.xlsx,.xls,.csv,.pdf" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" disabled={isAiFillLoading} />
-                                <div className="flex flex-col items-center justify-center">
-                                    {isAiFillLoading ? <div className="animate-spin h-8 w-8 border-4 border-purple-500 border-t-transparent rounded-full"></div> : <UploadIcon className="h-8 w-8 text-purple-400 mb-2" />}
-                                    <p className="text-xs font-bold text-purple-700">{isAiFillLoading ? '분석 중...' : '파일 업로드 (Excel, PDF, 이미지)'}</p>
-                                </div>
-                            </div>
-                        )}
-                        {aiError && <p className="text-xs text-red-500 mt-2 text-center">{aiError}</p>}
-                    </div>
-
-                    {/* Manual Input Form */}
-                    <div className="border-t pt-4 space-y-4">
-                        <div>
-                            <label className="block text-xs font-bold text-slate-600 mb-1">제품명</label>
-                            <input type="text" className="w-full border p-2 rounded" value={formData.name || ''} onChange={e => handleInputChange('name', e.target.value)} placeholder="예: HPG-Special" />
-                        </div>
-                        <div>
-                            <label className="block text-xs font-bold text-slate-600 mb-1">상세 설명</label>
-                            <textarea className="w-full border p-2 rounded text-sm" rows={3} value={formData.description || ''} onChange={e => handleInputChange('description', e.target.value)} placeholder="특징 입력" />
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-xs font-bold text-slate-600 mb-1">용도</label>
-                                <select className="w-full border p-2 rounded" value={formData.usage} onChange={e => handleInputChange('usage', e.target.value)}>
-                                    <option value="그린">그린</option>
-                                    <option value="티">티</option>
-                                    <option value="페어웨이">페어웨이</option>
-                                </select>
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-slate-600 mb-1">타입</label>
-                                <select className="w-full border p-2 rounded" value={formData.type} onChange={e => handleInputChange('type', e.target.value)}>
-                                    <option value="">타입 선택</option>
-                                    {Object.entries(FERTILIZER_TYPE_GROUPS).map(([group, types]) => (
-                                        <optgroup label={group} key={group}>
-                                            {(types as string[]).map(t => <option key={t} value={t}>{t}</option>)}
-                                        </optgroup>
-                                    ))}
-                                    <optgroup label="기타"><option value="기타">기타</option></optgroup>
-                                </select>
-                            </div>
-                        </div>
-                        
-                        {/* Nutrient Inputs */}
-                        <div className="bg-slate-50 p-3 rounded border">
-                            <p className="text-xs font-bold text-slate-500 mb-2">주요 성분 (%)</p>
-                            <div className="grid grid-cols-3 gap-2">
-                                {['N','P','K'].map(n => (
-                                    <div key={n}><label className="text-[10px]">{n}</label><input type="number" className="w-full border p-1 rounded text-sm" value={formData[n as keyof Fertilizer] || 0} onChange={e => handleInputChange(n as any, Number(e.target.value))} /></div>
-                                ))}
-                            </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-4">
-                            <div><label className="block text-xs font-bold text-slate-600">포장단위</label><input type="text" className="w-full border p-2 rounded" value={formData.unit || ''} onChange={e => handleInputChange('unit', e.target.value)} placeholder="20kg" /></div>
-                            <div><label className="block text-xs font-bold text-slate-600">가격</label><input type="number" className="w-full border p-2 rounded" value={formData.price || 0} onChange={e => handleInputChange('price', Number(e.target.value))} /></div>
-                        </div>
-                        <div><label className="block text-xs font-bold text-slate-600">권장사용량</label><input type="text" className="w-full border p-2 rounded" value={formData.rate || ''} onChange={e => handleInputChange('rate', e.target.value)} placeholder="20g/㎡" /></div>
-                        
-                        <button onClick={handleSave} className="w-full bg-blue-600 text-white font-bold py-3 rounded hover:bg-blue-700 shadow-md">
-                            {isEditing ? '수정 저장' : '추가하기'}
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-// --- Main Component: AdminDashboard ---
-export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
-    const [allUsersData, setAllUsersData] = useState<UserDataSummary[]>([]);
-    const [masterFertilizers, setMasterFertilizers] = useState<Fertilizer[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    
-    const [selectedPendingUsers, setSelectedPendingUsers] = useState<Set<string>>(new Set());
-    const [activeTab, setActiveTab] = useState<'users' | 'fertilizers'>('users');
-    const [selectedUserForDetail, setSelectedUserForDetail] = useState<UserDataSummary | null>(null);
-    
-    // Modal State
-    const [isModalOpen, setIsModalOpen] = useState(false);
-    const [editingIndex, setEditingIndex] = useState<number | null>(null);
-
-    // Filter/Sort State
-    const [userSearchTerm, setUserSearchTerm] = useState('');
-    const [userSortField, setUserSortField] = useState<keyof UserDataSummary>('lastActivity');
-    const [userSortOrder, setUserSortOrder] = useState<'asc' | 'desc'>('desc');
-
-    useEffect(() => {
-        loadData();
-    }, []);
-
-    const loadData = async () => {
-        setIsLoading(true);
-        try {
-            const [users, ferts] = await Promise.all([api.getAllUsersData(), api.getFertilizers('admin')]);
-            setAllUsersData(users);
-            setMasterFertilizers(ferts);
-        } catch (e) {
-            console.error("Load Error", e);
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    // --- Fertilizer Logic ---
-    const openAddModal = () => { setEditingIndex(null); setIsModalOpen(true); };
-    const openEditModal = (idx: number) => { setEditingIndex(idx); setIsModalOpen(true); };
-
-    const handleSaveFertilizer = async (data: Partial<Fertilizer>) => {
-        if (!data.name || !data.unit || !data.rate) {
-            alert('필수 정보(제품명, 단위, 권장량)를 입력해주세요.');
-            return;
-        }
-        
-        // Preserve existing data if editing (stock, image)
-        const existing = editingIndex !== null ? masterFertilizers[editingIndex] : {};
-        const finalData: Fertilizer = {
-            ...DEFAULT_FERTILIZER as Fertilizer, // Type assertion for base
-            ...existing,
-            ...data,
-            // Ensure numbers
-            N: Number(data.N || 0), P: Number(data.P || 0), K: Number(data.K || 0),
-            price: Number(data.price || 0)
-        };
-
-        const newList = [...masterFertilizers];
-        if (editingIndex !== null) newList[editingIndex] = finalData;
-        else newList.push(finalData);
-
-        await api.saveFertilizers('admin', newList);
-        setMasterFertilizers(newList);
-        setIsModalOpen(false);
-    };
-
-    const handleRemoveFertilizer = async (index: number) => {
-        if (window.confirm('정말 삭제하시겠습니까?')) {
-            const newList = [...masterFertilizers];
-            newList.splice(index, 1);
-            await api.saveFertilizers('admin', newList);
-            setMasterFertilizers(newList);
-        }
-    };
-
-    // --- User Logic (Filtered & Sorted) ---
-    const processedUsers = useMemo(() => {
-        let data = allUsersData.filter(u => u.isApproved);
-        if (userSearchTerm) {
-            const term = userSearchTerm.toLowerCase();
-            data = data.filter(u => u.username.toLowerCase().includes(term) || u.golfCourse.toLowerCase().includes(term));
-        }
-        data.sort((a, b) => {
-            let valA: any = a[userSortField];
-            let valB: any = b[userSortField];
-            if (userSortField === 'lastActivity') {
-                valA = valA ? new Date(valA).getTime() : 0;
-                valB = valB ? new Date(valB).getTime() : 0;
-            }
-            if (valA < valB) return userSortOrder === 'asc' ? -1 : 1;
-            if (valA > valB) return userSortOrder === 'asc' ? 1 : -1;
-            return 0;
-        });
-        return data;
-    }, [allUsersData, userSearchTerm, userSortField, userSortOrder]);
-
-    const pendingUsers = useMemo(() => allUsersData.filter(u => !u.isApproved), [allUsersData]);
-
-    // --- Render ---
-    return (
-        <div className="min-h-screen bg-slate-100 p-4 sm:p-6 lg:p-8 font-sans">
-            <div className="max-w-7xl mx-auto space-y-6">
-                {/* Header */}
-                <header className="flex justify-between items-center bg-white p-4 rounded-lg shadow-sm">
-                    <div>
-                        <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
-                            <DashboardIcon /> 관리자 대시보드
-                        </h1>
-                        <p className="text-slate-500 text-sm">전체 사용자 및 마스터 데이터 관리</p>
-                    </div>
-                    <button onClick={onLogout} className="flex items-center gap-2 px-4 py-2 bg-slate-200 text-slate-700 font-semibold rounded-md hover:bg-slate-300">
-                        <LogoutIcon /> 로그아웃
-                    </button>
-                </header>
-
-                {/* Pending Approvals */}
-                {pendingUsers.length > 0 && (
-                    <section className="bg-amber-50 border-l-4 border-amber-500 p-6 rounded-r-lg shadow-md animate-fadeIn">
-                        <h2 className="text-xl font-bold text-amber-800 mb-4">⏳ 승인 대기 ({pendingUsers.length})</h2>
-                        {/* (User list UI logic here - simplified for brevity but functional) */}
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                            {pendingUsers.map(u => (
-                                <div key={u.username} className="bg-white p-4 rounded shadow border border-amber-200">
-                                    <h3 className="font-bold">{u.username}</h3>
-                                    <p className="text-sm text-slate-600">{u.golfCourse}</p>
-                                    <div className="mt-2 flex gap-2">
-                                        <button onClick={async () => { await api.approveUser(u.username); loadData(); }} className="bg-green-500 text-white px-3 py-1 rounded text-sm">승인</button>
-                                        <button onClick={async () => { await api.deleteUser(u.username); loadData(); }} className="bg-red-500 text-white px-3 py-1 rounded text-sm">거절</button>
-                                    </div>
-                                </div>
-                            ))}
-                        </div>
-                    </section>
-                )}
-
-                {/* Main Content Tabs */}
-                <div className="bg-white rounded-lg shadow-sm overflow-hidden">
-                    <div className="flex border-b">
-                        <button onClick={() => setActiveTab('users')} className={`flex-1 py-4 font-bold ${activeTab === 'users' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-500'}`}>사용자 관리</button>
-                        <button onClick={() => setActiveTab('fertilizers')} className={`flex-1 py-4 font-bold ${activeTab === 'fertilizers' ? 'text-green-600 border-b-2 border-green-600' : 'text-slate-500'}`}>비료 관리</button>
-                    </div>
-
-                    <div className="p-6">
-                        {activeTab === 'users' ? (
-                            <div>
-                                {/* Search & Filters */}
-                                <div className="flex gap-4 mb-4">
-                                    <input type="text" placeholder="검색..." value={userSearchTerm} onChange={e => setUserSearchTerm(e.target.value)} className="border p-2 rounded w-full" />
-                                </div>
-                                {/* User Table */}
-                                <div className="overflow-x-auto">
-                                    <table className="w-full text-sm text-left">
-                                        <thead className="bg-slate-100 text-slate-600 uppercase">
-                                            <tr>
-                                                <th className="p-3 cursor-pointer" onClick={() => { setUserSortField('golfCourse'); setUserSortOrder(o => o==='asc'?'desc':'asc'); }}>골프장</th>
-                                                <th className="p-3">사용자</th>
-                                                <th className="p-3 cursor-pointer" onClick={() => { setUserSortField('totalCost'); setUserSortOrder(o => o==='asc'?'desc':'asc'); }}>총 비용</th>
-                                                <th className="p-3">관리</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {processedUsers.map(u => (
-                                                <tr key={u.username} className="hover:bg-slate-50 border-b">
-                                                    <td className="p-3 font-bold">{u.golfCourse}</td>
-                                                    <td className="p-3">{u.username}</td>
-                                                    <td className="p-3">{Math.round(u.totalCost).toLocaleString()}원</td>
-                                                    <td className="p-3 flex gap-2">
-                                                        <button onClick={() => setSelectedUserForDetail(u)} className="text-blue-600 hover:underline">상세</button>
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
-                        ) : (
-                            <div>
-                                <div className="flex justify-between mb-4">
-                                    <h3 className="font-bold text-slate-700">비료 목록 ({masterFertilizers.length})</h3>
-                                    <button onClick={openAddModal} className="bg-green-600 text-white px-4 py-2 rounded flex items-center gap-2"><PlusIcon /> 추가</button>
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                    {masterFertilizers.map((f, idx) => (
-                                        <div key={idx} className="border p-4 rounded bg-white relative group hover:shadow-md">
-                                            <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <button onClick={() => openEditModal(idx)} className="p-1 text-slate-500 hover:text-blue-600"><PencilIcon /></button>
-                                                <button onClick={() => handleRemoveFertilizer(idx)} className="p-1 text-slate-500 hover:text-red-600"><TrashIcon /></button>
-                                            </div>
-                                            <h4 className="font-bold text-lg">{f.name}</h4>
-                                            <p className="text-xs text-slate-500">{f.usage} | {f.type}</p>
-                                            <p className="text-sm mt-1 font-mono">{f.N}-{f.P}-{f.K}</p>
-                                            {f.description && <p className="text-xs text-slate-400 mt-2 border-t pt-1 truncate">{f.description}</p>}
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            </div>
-
-            {/* Modals */}
-            {selectedUserForDetail && (
-                <UserDetailModal userData={selectedUserForDetail} onClose={() => setSelectedUserForDetail(null)} />
-            )}
-
-            <FertilizerFormModal 
-                isOpen={isModalOpen} 
-                onClose={() => setIsModalOpen(false)} 
-                onSave={handleSaveFertilizer}
-                initialData={editingIndex !== null ? masterFertilizers[editingIndex] : undefined}
-                isEditing={editingIndex !== null}
-            />
-        </div>
-    );
-};
-
-// Export for use in App.tsx (but handled by index structure usually)
