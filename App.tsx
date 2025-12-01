@@ -1,17 +1,17 @@
 
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import * as XLSX from 'xlsx';
+import { GoogleGenAI } from '@google/genai';
 import { Fertilizer, LogEntry, NewFertilizerForm, NutrientLog, User } from './types';
-import { NUTRIENTS, FERTILIZER_GUIDE, USAGE_CATEGORIES, TYPE_CATEGORIES, MONTHLY_DISTRIBUTION, FERTILIZER_TYPE_GROUPS } from './constants';
+import { NUTRIENTS, FERTILIZER_GUIDE, USAGE_CATEGORIES, TYPE_CATEGORIES, MONTHLY_DISTRIBUTION } from './constants';
 import * as api from './api';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, ComposedChart } from 'recharts';
 import { Chatbot } from './Chatbot';
 import { ChatIcon, LogoutIcon, CalculatorIcon, TrashIcon, CalendarIcon, ClipboardListIcon, CloseIcon, PencilIcon, PlusIcon, SparklesIcon, ChevronDownIcon, ChevronUpIcon, CameraIcon, DocumentSearchIcon, UploadIcon, DownloadIcon } from './icons';
 import { Login } from './Login';
 import { AdminDashboard } from './AdminDashboard';
-import * as XLSX from 'xlsx';
-import { GoogleGenAI } from '@google/genai';
 
-// ... LoadingSpinner component ...
+
 const LoadingSpinner = () => (
     <div className="flex justify-center items-center min-h-screen bg-slate-100">
         <div className="flex flex-col items-center">
@@ -21,7 +21,8 @@ const LoadingSpinner = () => (
     </div>
 );
 
-// ... Helper Functions (parseRateValue, getApplicationDetails) ...
+// --- Helper Functions (Moved to Module Scope for Reusability) ---
+
 const parseRateValue = (rateStr: string) => {
     if (!rateStr) return 0;
     const m = rateStr.toString().match(/([0-9]+(\.[0-9]+)?)/);
@@ -158,7 +159,7 @@ const FertilizerDetailModal: React.FC<FertilizerDetailModalProps> = ({ fertilize
                             }`}>
                                 {fertilizer.usage}
                             </span>
-                            <span className="text-[10px] px-2 py-0.5 bg-slate-200 text-slate-700 rounded-full truncate max-w-[150px]">{fertilizer.type}</span>
+                            <span className="text-[10px] px-2 py-0.5 bg-slate-200 text-slate-700 rounded-full">{fertilizer.type}</span>
                         </div>
                     </div>
                     <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full text-slate-500 transition-colors">
@@ -184,14 +185,6 @@ const FertilizerDetailModal: React.FC<FertilizerDetailModalProps> = ({ fertilize
                 <div className="overflow-y-auto p-6 flex-1">
                     {activeTab === 'info' ? (
                         <div className="space-y-6">
-                            {/* Product Description */}
-                            {fertilizer.description && (
-                                <div className="bg-blue-50 p-4 rounded-lg border border-blue-100 text-sm text-slate-700">
-                                    <h4 className="font-bold text-blue-900 mb-1 text-xs uppercase">제품 특징 및 설명</h4>
-                                    <p className="whitespace-pre-line">{fertilizer.description}</p>
-                                </div>
-                            )}
-
                             <div className="grid grid-cols-2 gap-4 text-sm">
                                 <div className="bg-slate-50 p-3 rounded-lg border">
                                     <p className="text-slate-500 text-xs mb-1">포장 단위</p>
@@ -234,14 +227,7 @@ const FertilizerDetailModal: React.FC<FertilizerDetailModalProps> = ({ fertilize
                                                     </td>
                                                 </tr>
                                             ))}
-                                            {fertilizer.aminoAcid && fertilizer.aminoAcid > 0 && (
-                                                <tr>
-                                                    <td className="p-2 pl-4 font-medium text-slate-700">아미노산</td>
-                                                    <td className="p-2 text-center text-slate-600">{fertilizer.aminoAcid}%</td>
-                                                    <td className="p-2 text-right pr-4 text-slate-400">-</td>
-                                                </tr>
-                                            )}
-                                            {NUTRIENTS.every(n => (fertilizer as any)[n] === 0) && (!fertilizer.aminoAcid || fertilizer.aminoAcid === 0) && (
+                                            {NUTRIENTS.every(n => (fertilizer as any)[n] === 0) && (
                                                 <tr><td colSpan={3} className="p-4 text-center text-slate-400 text-xs">표시할 영양소 정보가 없습니다.</td></tr>
                                             )}
                                         </tbody>
@@ -331,9 +317,7 @@ const FertilizerDetailModal: React.FC<FertilizerDetailModalProps> = ({ fertilize
     );
 };
 
-// ... Rest of App.tsx (TurfFertilizerApp component) ...
 export default function TurfFertilizerApp() {
-  // ... existing code ...
   const [user, setUser] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -483,12 +467,6 @@ export default function TurfFertilizerApp() {
       api.saveLog(user, log);
     }
   }, [log, isInitialDataLoading, user, isAdmin]);
-
-  useEffect(() => {
-      if (!isInitialDataLoading && user && !isAdmin) {
-          api.saveFertilizers(user, userFertilizers);
-      }
-  }, [userFertilizers, isInitialDataLoading, user, isAdmin]);
 
   // Persist all settings including new manual plan fields
   useEffect(() => {
@@ -1068,7 +1046,7 @@ export default function TurfFertilizerApp() {
       ${log.slice(0, 10).map(l => `- **${l.date} (${l.usage}):** ${l.product} (${l.area}㎡, ${l.applicationRate}${l.applicationUnit})`).join('\n')}
 
       ## 4. 사용 가능한 비료 목록
-      ${fertilizers.map(f => `- **${f.name}** (N-P-K: ${f.N}-{f.P}-{f.K}, 구분: ${f.usage})`).join('\n')}
+      ${fertilizers.map(f => `- **${f.name}** (N-P-K: ${f.N}-${f.P}-${f.K}, 구분: ${f.usage})`).join('\n')}
 
       ---
 
@@ -1294,7 +1272,6 @@ export default function TurfFertilizerApp() {
 
   return (
     <div className="min-h-screen bg-slate-100 font-sans p-4 sm:p-6 lg:p-8">
-      {/* ... (rest of the component structure is same, just updated FertilizerDetailModal usage above) ... */}
       <div className="max-w-4xl mx-auto space-y-6">
         <header className="text-center relative py-4">
           <h1 className="text-3xl sm:text-4xl font-bold text-slate-800">잔디 비료 관리 앱</h1>
@@ -1313,7 +1290,6 @@ export default function TurfFertilizerApp() {
 
         {/* Annual Guide & Selection */}
         <section className="bg-white p-6 rounded-lg shadow-md">
-            {/* ... content ... */}
             <div className="border-b pb-3 mb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                 <h2 className="text-xl font-semibold text-slate-700">📘 연간 시비 계획 및 가이드</h2>
                 <button onClick={() => setManualPlanMode(!manualPlanMode)} className={`text-sm px-3 py-1 rounded transition-colors ${manualPlanMode ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}`}>
@@ -1553,11 +1529,10 @@ export default function TurfFertilizerApp() {
 
         {/* Fertilizer List Section */}
         <section className="bg-white p-6 rounded-lg shadow-md">
-            <div className="mb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+            <div className="mb-4">
                 <h2 className="text-xl font-semibold text-slate-700 flex items-center gap-2">
                     🌱 보유 비료 목록
                 </h2>
-                {/* Removed 'Direct Add' button for users */}
             </div>
             
             <div className="flex gap-2 mb-4 overflow-x-auto pb-2 no-scrollbar">
@@ -1584,19 +1559,17 @@ export default function TurfFertilizerApp() {
                         key={fertilizer.name} 
                         onClick={() => setDetailModalFertilizer(fertilizer)}
                         className={`
-                            group relative p-4 rounded-xl border-2 transition-all duration-200 cursor-pointer hover:shadow-lg hover:-translate-y-1 flex flex-col items-center justify-center text-center h-24 bg-white
-                            ${fertilizer.usage === '그린' ? 'border-green-100 hover:border-green-500' : 
-                              fertilizer.usage === '티' ? 'border-blue-100 hover:border-blue-500' : 
-                              'border-orange-100 hover:border-orange-500'}
+                            group relative p-4 rounded-xl border-2 transition-all duration-200 cursor-pointer hover:shadow-lg hover:-translate-y-1 flex flex-col items-center justify-center text-center h-24
+                            ${fertilizer.usage === '그린' ? 'bg-green-50/50 border-green-200 hover:border-green-500 hover:bg-green-50' : 
+                              fertilizer.usage === '티' ? 'bg-blue-50/50 border-blue-200 hover:border-blue-500 hover:bg-blue-50' : 
+                              'bg-orange-50/50 border-orange-200 hover:border-orange-500 hover:bg-orange-50'}
                         `}
                     >
-                        <div className={`absolute top-0 left-0 right-0 h-1.5 rounded-t-lg ${
-                             fertilizer.usage === '그린' ? 'bg-green-500' : 
-                             fertilizer.usage === '티' ? 'bg-blue-500' : 
-                             'bg-orange-500'
-                        }`}></div>
-                        
-                        <h3 className="font-bold text-sm text-slate-800 break-keep leading-tight mt-1">
+                        <h3 className={`font-bold text-sm break-keep leading-tight ${
+                             fertilizer.usage === '그린' ? 'text-green-900' : 
+                             fertilizer.usage === '티' ? 'text-blue-900' : 
+                             'text-orange-900'
+        }`}>
                             {fertilizer.name}
                         </h3>
                     </div>
@@ -1713,7 +1686,6 @@ export default function TurfFertilizerApp() {
             )}
         </section>
 
-        {/* ... Rest of components (Log Input, Analysis, Chatbot) ... */}
         {/* Tabbed Log Input Section */}
         <section ref={logSectionRef} className="bg-white p-6 rounded-lg shadow-md">
             <h2 className="text-xl font-semibold text-slate-700 mb-4 flex items-center gap-2">
@@ -1770,7 +1742,7 @@ export default function TurfFertilizerApp() {
                                                     >
                                                         <span className="font-medium text-slate-700">{f.name}</span>
                                                         <div className="flex items-center gap-2">
-                                                            <span className="text-[10px] bg-slate-100 px-1.5 rounded text-slate-500 truncate max-w-[80px]">{f.type}</span>
+                                                            <span className="text-[10px] bg-slate-100 px-1.5 rounded text-slate-500">{f.type}</span>
                                                             <span className="text-xs text-slate-400">{f.N}-{f.P}-{f.K}</span>
                                                         </div>
                                                     </div>
@@ -2154,10 +2126,71 @@ export default function TurfFertilizerApp() {
             </details>
         </section>
         
-        {/* ... Rest of sections (Log List, Chatbot) ... */}
+        <section className="bg-white p-6 rounded-lg shadow-md flex flex-col items-center text-center space-y-4">
+            <h2 className="text-xl font-bold text-slate-800">🤖 AI 전문가 분석 및 추천</h2>
+            <p className="text-slate-600 max-w-lg">
+                현재 잔디 상태와 시비 기록, 그리고 선택된 관리 가이드를 바탕으로<br/>
+                AI가 최적의 시비 계획을 분석하고 제안해드립니다.
+            </p>
+            
+            <button 
+                onClick={handleGetRecommendation} 
+                disabled={isLoadingAI}
+                className={`w-full bg-purple-600 text-white font-semibold p-3 rounded-md hover:bg-purple-700 transition-colors flex items-center justify-center gap-2 shadow-md ${isLoadingAI ? 'opacity-75 cursor-not-allowed' : ''}`}
+            >
+                {isLoadingAI ? (
+                    <>
+                         <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
+                         <span>AI가 데이터를 분석 중입니다...</span>
+                    </>
+                ) : (
+                    <>
+                        <SparklesIcon /> AI 추천 받기
+                    </>
+                )}
+            </button>
+
+            {aiError && (
+                <div className="w-full p-4 bg-red-50 text-red-600 rounded-md border border-red-200 text-sm">
+                    {aiError}
+                </div>
+            )}
+
+            {aiResponse && (
+                <div className="w-full text-left mt-6 animate-fadeIn">
+                    <div className="bg-purple-50 border border-purple-200 rounded-xl p-6 shadow-sm">
+                        <div className="prose prose-sm sm:prose max-w-none text-slate-700 mb-6" dangerouslySetInnerHTML={{ __html: formattedAiResponse }} />
+                        
+                        {aiAction && (
+                            <div className="bg-white border-l-4 border-purple-600 p-4 rounded-r-lg shadow-sm">
+                                <h4 className="font-bold text-purple-800 mb-2 flex items-center gap-2">
+                                    🚀 AI 빠른 실행 제안
+                                </h4>
+                                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                                    <div>
+                                        <p className="text-sm text-slate-600 mb-1">
+                                            <span className="font-semibold text-slate-800">{aiAction.targetArea}</span> 구역에 
+                                            <span className="font-semibold text-slate-800 mx-1">{aiAction.productName}</span>을(를) 
+                                            <span className="font-bold text-purple-600 mx-1">{aiAction.rate}g/㎡</span> 시비하세요.
+                                        </p>
+                                        <p className="text-xs text-slate-500">{aiAction.reason}</p>
+                                    </div>
+                                    <button 
+                                        onClick={handleApplyAiAction}
+                                        className="px-4 py-2 bg-purple-600 text-white text-sm font-bold rounded-lg hover:bg-purple-700 transition shadow-sm whitespace-nowrap"
+                                    >
+                                        일지에 적용하기
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+        </section>
+
         {/* Log List Section */}
         <section className="space-y-4">
-             {/* ... */}
              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                 <h2 className="text-xl font-semibold text-slate-700 flex items-center gap-2">
                     <ClipboardListIcon /> 시비 일지 기록 ({sortedAndFilteredLog.length})
