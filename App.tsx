@@ -380,7 +380,8 @@ export default function TurfFertilizerApp() {
   const [detailModalFertilizer, setDetailModalFertilizer] = useState<Fertilizer | null>(null);
   
   // Fertilizer List Filter State
-  const [activeFertilizerListTab, setActiveFertilizerListTab] = useState<'전체' | '그린' | '티' | '페어웨이'>('전체');
+  const [filterUsage, setFilterUsage] = useState<string>('전체');
+  const [filterType, setFilterType] = useState<string>('전체');
   
   // Log entry form states (Tabbed)
   const [activeLogTab, setActiveLogTab] = useState<'그린' | '티' | '페어웨이'>('그린');
@@ -493,6 +494,19 @@ export default function TurfFertilizerApp() {
   const fertilizers = useMemo(() => {
       return [...adminFertilizers, ...userFertilizers];
   }, [adminFertilizers, userFertilizers]);
+
+  const uniqueTypes = useMemo(() => {
+      const types = new Set(fertilizers.map(f => f.type));
+      return Array.from(types).sort();
+  }, [fertilizers]);
+
+  const filteredFertilizersList = useMemo(() => {
+    return fertilizers.filter(f => {
+        const matchUsage = filterUsage === '전체' || f.usage === filterUsage;
+        const matchType = filterType === '전체' || f.type === filterType;
+        return matchUsage && matchType;
+    });
+  }, [fertilizers, filterUsage, filterType]);
 
   // Data Saving Effects
   useEffect(() => {
@@ -842,9 +856,6 @@ export default function TurfFertilizerApp() {
                 if (data[monthKey] && product) {
                     // Application Rate is already g/m2 (or ml/m2)
                     // If ml/m2, we should ideally use density, but simpler to assume rate enters formulation
-                    
-                    // NPK Contribution = Rate (g/m2) * (Percent / 100)
-                    // For Liquid: Rate(ml/m2) * Density * (Percent/100)
                     // We use getApplicationDetails logic for consistency, but scaled to 1m2
                     
                     // We can reuse getApplicationDetails(product, 1, entry.applicationRate)
@@ -1562,102 +1573,109 @@ export default function TurfFertilizerApp() {
 
         {/* Fertilizer List Section */}
         <section className="bg-white p-6 rounded-lg shadow-md">
-            <div className="mb-4">
+            <div className="mb-4 flex flex-col sm:flex-row justify-between items-end sm:items-center gap-4">
                 <h2 className="text-xl font-semibold text-slate-700 flex items-center gap-2">
                     🌱 보유 비료 목록
                 </h2>
-            </div>
-            
-            <div className="flex gap-2 mb-4 overflow-x-auto pb-2 no-scrollbar">
-                {(['전체', '그린', '티', '페어웨이'] as const).map(tab => (
-                    <button
-                        key={tab}
-                        onClick={() => setActiveFertilizerListTab(tab)}
-                        className={`px-4 py-2 rounded-full text-sm font-bold whitespace-nowrap transition-colors border ${
-                            activeFertilizerListTab === tab 
-                                ? 'bg-slate-800 text-white border-slate-800' 
-                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                        }`}
-                    >
-                        {tab}
-                    </button>
-                ))}
+                
+                {/* NEW: Dropdown Filters for Usage and Type */}
+                <div className="flex gap-2 w-full sm:w-auto">
+                     <div className="relative flex-1 sm:w-32">
+                        <select 
+                            value={filterUsage}
+                            onChange={(e) => setFilterUsage(e.target.value)}
+                            className="w-full appearance-none bg-slate-50 border border-slate-200 text-slate-700 py-2 pl-3 pr-8 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer hover:bg-slate-100 transition-colors"
+                        >
+                            <option value="전체">전체 용도</option>
+                            <option value="그린">그린</option>
+                            <option value="티">티</option>
+                            <option value="페어웨이">페어웨이</option>
+                        </select>
+                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
+                            <ChevronDownIcon className="h-4 w-4" />
+                        </div>
+                     </div>
+                     <div className="relative flex-1 sm:w-32">
+                        <select 
+                            value={filterType}
+                            onChange={(e) => setFilterType(e.target.value)}
+                            className="w-full appearance-none bg-slate-50 border border-slate-200 text-slate-700 py-2 pl-3 pr-8 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer hover:bg-slate-100 transition-colors"
+                        >
+                            <option value="전체">전체 타입</option>
+                            {uniqueTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                         <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
+                            <ChevronDownIcon className="h-4 w-4" />
+                        </div>
+                     </div>
+                </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {fertilizers
-                    .filter(f => activeFertilizerListTab === '전체' || f.usage === activeFertilizerListTab)
-                    .map(fertilizer => (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                {filteredFertilizersList.map(fertilizer => (
                     <div 
                         key={fertilizer.name} 
                         onClick={() => setDetailModalFertilizer(fertilizer)}
-                        className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all cursor-pointer overflow-hidden flex flex-col h-full group hover:-translate-y-0.5"
+                        className="group bg-white rounded-lg border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-400 transition-all cursor-pointer relative overflow-hidden flex flex-col h-full"
                     >
-                        {/* Usage Color Bar */}
-                        <div className={`h-1.5 w-full ${
+                        {/* Usage Color Strip */}
+                        <div className={`absolute left-0 top-0 bottom-0 w-1 ${
                             fertilizer.usage === '그린' ? 'bg-green-500' :
                             fertilizer.usage === '티' ? 'bg-blue-500' :
                             'bg-orange-500'
                         }`}></div>
-                        
-                        <div className="p-4 flex flex-col flex-1">
-                            {/* Badges Header */}
-                            <div className="flex justify-between items-start mb-2">
-                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                    fertilizer.usage === '그린' ? 'bg-green-100 text-green-800' :
-                                    fertilizer.usage === '티' ? 'bg-blue-100 text-blue-800' :
-                                    'bg-orange-100 text-orange-800'
-                                }`}>
-                                    {fertilizer.usage}
-                                </span>
-                                <span className="text-[10px] text-slate-500 border border-slate-200 px-2 py-0.5 rounded-full bg-slate-50 font-medium tracking-tight truncate max-w-[60%]">
+
+                        <div className="p-3 pl-4 flex flex-col h-full">
+                            {/* Header: Name and Type */}
+                            <div className="flex justify-between items-start mb-1 gap-2">
+                                <h3 className="text-sm font-bold text-slate-800 leading-tight group-hover:text-blue-700" title={fertilizer.name}>
+                                    {fertilizer.name}
+                                </h3>
+                                <span className="text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 whitespace-nowrap flex-shrink-0">
                                     {fertilizer.type}
                                 </span>
                             </div>
-                            
-                            {/* Product Name */}
-                            <h3 className="font-bold text-slate-800 text-lg mb-1 leading-tight group-hover:text-blue-600 transition-colors line-clamp-2 min-h-[1.5em]">
-                                {fertilizer.name}
-                            </h3>
-                            
-                            {/* Description Snippet */}
-                            <p className="text-xs text-slate-500 line-clamp-2 mb-3 leading-relaxed min-h-[2.5em]">
-                                {fertilizer.description || "설명이 없습니다."}
-                            </p>
-                            
-                            {/* Footer: Stats & Stock */}
-                            <div className="mt-auto space-y-3">
-                                {/* Visual NPK Pills */}
-                                <div className="flex items-center gap-1.5 w-full">
-                                    <div className="flex-1 bg-green-50 border border-green-100 rounded px-1.5 py-1 flex flex-col items-center justify-center min-w-[30%]">
-                                        <span className="text-[10px] text-green-600 font-bold uppercase">N</span>
-                                        <span className="text-sm font-black text-green-700">{fertilizer.N}</span>
-                                    </div>
-                                    <div className="flex-1 bg-blue-50 border border-blue-100 rounded px-1.5 py-1 flex flex-col items-center justify-center min-w-[30%]">
-                                        <span className="text-[10px] text-blue-600 font-bold uppercase">P</span>
-                                        <span className="text-sm font-black text-blue-700">{fertilizer.P}</span>
-                                    </div>
-                                    <div className="flex-1 bg-orange-50 border border-orange-100 rounded px-1.5 py-1 flex flex-col items-center justify-center min-w-[30%]">
-                                        <span className="text-[10px] text-orange-600 font-bold uppercase">K</span>
-                                        <span className="text-sm font-black text-orange-700">{fertilizer.K}</span>
-                                    </div>
-                                </div>
 
-                                <div className="border-t border-slate-100 pt-2 flex items-center justify-between">
-                                    <span className="text-xs text-slate-400 font-mono">{fertilizer.unit}</span>
+                            {/* NPK Badge */}
+                            <div className="flex items-center gap-2 mb-2">
+                                <div className="text-[10px] font-mono font-bold bg-slate-50 border border-slate-100 rounded px-1.5 py-0.5 text-slate-600 flex gap-1">
+                                    <span className="text-green-700">{fertilizer.N}</span>-
+                                    <span className="text-blue-700">{fertilizer.P}</span>-
+                                    <span className="text-orange-700">{fertilizer.K}</span>
+                                </div>
+                                <span className="text-[10px] text-slate-400">{fertilizer.unit}</span>
+                            </div>
+
+                            {/* Description - Simplified and cleaner */}
+                            <div className="mb-3 flex-1">
+                                <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed h-[2.5rem] overflow-hidden">
+                                    {fertilizer.description || <span className="text-slate-300 italic">설명 없음</span>}
+                                </p>
+                            </div>
+
+                            {/* Footer: Price/Unit & Stock */}
+                            <div className="mt-auto flex justify-between items-center border-t border-slate-100 pt-2">
+                                <span className="text-xs font-bold text-slate-700">
+                                    {fertilizer.price.toLocaleString()}원
+                                </span>
+                                
+                                <div className="flex items-center gap-1.5">
                                     {fertilizer.stock !== undefined && (
-                                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${fertilizer.stock <= 5 ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-500'}`}>
-                                            재고: {fertilizer.stock}
+                                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${fertilizer.stock <= 5 ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-500'}`}>
+                                            재고 {fertilizer.stock}
                                         </span>
                                     )}
+                                    <span className="text-[10px] text-slate-500 bg-white border border-slate-200 px-1.5 py-0.5 rounded">
+                                        {fertilizer.rate}
+                                    </span>
                                 </div>
                             </div>
                         </div>
                     </div>
                 ))}
-                {fertilizers.filter(f => activeFertilizerListTab === '전체' || f.usage === activeFertilizerListTab).length === 0 && (
+                {filteredFertilizersList.length === 0 && (
                     <div className="col-span-full flex flex-col items-center justify-center py-12 text-slate-400 bg-slate-50 rounded-xl border border-dashed">
-                        <p>등록된 비료가 없습니다.</p>
+                        <p>조건에 맞는 비료가 없습니다.</p>
                     </div>
                 )}
             </div>
