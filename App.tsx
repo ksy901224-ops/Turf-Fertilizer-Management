@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { GoogleGenAI } from '@google/genai';
@@ -382,6 +381,7 @@ export default function TurfFertilizerApp() {
   // Fertilizer List Filter State
   const [filterUsage, setFilterUsage] = useState<string>('전체');
   const [filterType, setFilterType] = useState<string>('전체');
+  const [isFertilizerListOpen, setIsFertilizerListOpen] = useState(false); // New state to control collapse
   
   // Log entry form states (Tabbed)
   const [activeLogTab, setActiveLogTab] = useState<'그린' | '티' | '페어웨이'>('그린');
@@ -1572,113 +1572,110 @@ export default function TurfFertilizerApp() {
         </section>
 
         {/* Fertilizer List Section */}
-        <section className="bg-white p-6 rounded-lg shadow-md">
-            <div className="mb-4 flex flex-col sm:flex-row justify-between items-end sm:items-center gap-4">
+        <section className="bg-white rounded-lg shadow-md overflow-hidden">
+            <div 
+                onClick={() => setIsFertilizerListOpen(!isFertilizerListOpen)} 
+                className="p-6 flex justify-between items-center cursor-pointer bg-white hover:bg-slate-50 transition-colors"
+            >
                 <h2 className="text-xl font-semibold text-slate-700 flex items-center gap-2">
                     🌱 보유 비료 목록
                 </h2>
-                
-                {/* NEW: Dropdown Filters for Usage and Type */}
-                <div className="flex gap-2 w-full sm:w-auto">
-                     <div className="relative flex-1 sm:w-32">
-                        <select 
-                            value={filterUsage}
-                            onChange={(e) => setFilterUsage(e.target.value)}
-                            className="w-full appearance-none bg-slate-50 border border-slate-200 text-slate-700 py-2 pl-3 pr-8 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer hover:bg-slate-100 transition-colors"
-                        >
-                            <option value="전체">전체 용도</option>
-                            <option value="그린">그린</option>
-                            <option value="티">티</option>
-                            <option value="페어웨이">페어웨이</option>
-                        </select>
-                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
-                            <ChevronDownIcon className="h-4 w-4" />
-                        </div>
-                     </div>
-                     <div className="relative flex-1 sm:w-32">
-                        <select 
-                            value={filterType}
-                            onChange={(e) => setFilterType(e.target.value)}
-                            className="w-full appearance-none bg-slate-50 border border-slate-200 text-slate-700 py-2 pl-3 pr-8 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer hover:bg-slate-100 transition-colors"
-                        >
-                            <option value="전체">전체 타입</option>
-                            {uniqueTypes.map(t => <option key={t} value={t}>{t}</option>)}
-                        </select>
-                         <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
-                            <ChevronDownIcon className="h-4 w-4" />
-                        </div>
-                     </div>
-                </div>
+                <button className="text-slate-500">
+                    {isFertilizerListOpen ? <ChevronUpIcon /> : <ChevronDownIcon />}
+                </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                {filteredFertilizersList.map(fertilizer => (
-                    <div 
-                        key={fertilizer.name} 
-                        onClick={() => setDetailModalFertilizer(fertilizer)}
-                        className="group bg-white rounded-lg border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-400 transition-all cursor-pointer relative overflow-hidden flex flex-col h-full"
-                    >
-                        {/* Usage Color Strip */}
-                        <div className={`absolute left-0 top-0 bottom-0 w-1 ${
-                            fertilizer.usage === '그린' ? 'bg-green-500' :
-                            fertilizer.usage === '티' ? 'bg-blue-500' :
-                            'bg-orange-500'
-                        }`}></div>
-
-                        <div className="p-3 pl-4 flex flex-col h-full">
-                            {/* Header: Name and Type */}
-                            <div className="flex justify-between items-start mb-1 gap-2">
-                                <h3 className="text-sm font-bold text-slate-800 leading-tight group-hover:text-blue-700" title={fertilizer.name}>
-                                    {fertilizer.name}
-                                </h3>
-                                <span className="text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded border border-slate-200 whitespace-nowrap flex-shrink-0">
-                                    {fertilizer.type}
-                                </span>
-                            </div>
-
-                            {/* NPK Badge */}
-                            <div className="flex items-center gap-2 mb-2">
-                                <div className="text-[10px] font-mono font-bold bg-slate-50 border border-slate-100 rounded px-1.5 py-0.5 text-slate-600 flex gap-1">
-                                    <span className="text-green-700">{fertilizer.N}</span>-
-                                    <span className="text-blue-700">{fertilizer.P}</span>-
-                                    <span className="text-orange-700">{fertilizer.K}</span>
+            {isFertilizerListOpen && (
+                <div className="p-6 pt-0 border-t animate-fadeIn">
+                    <div className="mb-4 mt-4 flex flex-col sm:flex-row justify-end items-end sm:items-center gap-4">
+                        {/* Filters */}
+                        <div className="flex gap-2 w-full sm:w-auto">
+                            <div className="relative flex-1 sm:w-32">
+                                <select 
+                                    value={filterUsage}
+                                    onChange={(e) => setFilterUsage(e.target.value)}
+                                    className="w-full appearance-none bg-slate-50 border border-slate-200 text-slate-700 py-2 pl-3 pr-8 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer hover:bg-slate-100 transition-colors"
+                                >
+                                    <option value="전체">전체 용도</option>
+                                    <option value="그린">그린</option>
+                                    <option value="티">티</option>
+                                    <option value="페어웨이">페어웨이</option>
+                                </select>
+                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
+                                    <ChevronDownIcon className="h-4 w-4" />
                                 </div>
-                                <span className="text-[10px] text-slate-400">{fertilizer.unit}</span>
                             </div>
-
-                            {/* Description - Simplified and cleaner */}
-                            <div className="mb-3 flex-1">
-                                <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed h-[2.5rem] overflow-hidden">
-                                    {fertilizer.description || <span className="text-slate-300 italic">설명 없음</span>}
-                                </p>
+                            <div className="relative flex-1 sm:w-32">
+                                <select 
+                                    value={filterType}
+                                    onChange={(e) => setFilterType(e.target.value)}
+                                    className="w-full appearance-none bg-slate-50 border border-slate-200 text-slate-700 py-2 pl-3 pr-8 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer hover:bg-slate-100 transition-colors"
+                                >
+                                    <option value="전체">전체 타입</option>
+                                    {uniqueTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                                </select>
+                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
+                                    <ChevronDownIcon className="h-4 w-4" />
+                                </div>
                             </div>
+                        </div>
+                    </div>
 
-                            {/* Footer: Price/Unit & Stock */}
-                            <div className="mt-auto flex justify-between items-center border-t border-slate-100 pt-2">
-                                <span className="text-xs font-bold text-slate-700">
-                                    {fertilizer.price.toLocaleString()}원
-                                </span>
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                        {filteredFertilizersList.map(fertilizer => (
+                            <div 
+                                key={fertilizer.name} 
+                                onClick={() => setDetailModalFertilizer(fertilizer)}
+                                className="group bg-white rounded-lg border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-400 transition-all cursor-pointer relative overflow-hidden flex items-stretch"
+                            >
+                                {/* Usage Indicator Strip */}
+                                <div className={`w-1.5 ${
+                                    fertilizer.usage === '그린' ? 'bg-green-500' :
+                                    fertilizer.usage === '티' ? 'bg-blue-500' :
+                                    'bg-orange-500'
+                                }`}></div>
                                 
-                                <div className="flex items-center gap-1.5">
-                                    {fertilizer.stock !== undefined && (
-                                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${fertilizer.stock <= 5 ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-500'}`}>
-                                            재고 {fertilizer.stock}
-                                        </span>
-                                    )}
-                                    <span className="text-[10px] text-slate-500 bg-white border border-slate-200 px-1.5 py-0.5 rounded">
-                                        {fertilizer.rate}
-                                    </span>
+                                <div className="p-3 flex-1 flex flex-col justify-between">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <h3 className="text-sm font-bold text-slate-800 group-hover:text-blue-700">{fertilizer.name}</h3>
+                                            <span className="text-[10px] text-slate-500">{fertilizer.type}</span>
+                                        </div>
+                                        {/* NPK Badge */}
+                                        <div className="text-[10px] font-mono font-bold bg-slate-100 rounded px-1.5 py-0.5 text-slate-600">
+                                             {fertilizer.N}-{fertilizer.P}-{fertilizer.K}
+                                        </div>
+                                    </div>
+                                    
+                                    {/* Inline Description Snippet */}
+                                    <div className="text-xs text-slate-400 mt-1 truncate pr-2">
+                                        {fertilizer.description || "상세 설명 없음"}
+                                    </div>
+
+                                    <div className="flex justify-between items-end mt-2 pt-2 border-t border-slate-50">
+                                         <div className="text-xs text-slate-500">
+                                             {fertilizer.unit} / {fertilizer.rate}
+                                         </div>
+                                         <div className="font-bold text-slate-700 text-sm">
+                                             {fertilizer.price.toLocaleString()}원
+                                         </div>
+                                    </div>
+                                </div>
+                                
+                                {/* Action Arrow / Icon */}
+                                <div className="w-8 flex items-center justify-center bg-slate-50 text-slate-300 group-hover:text-blue-500 transition-colors border-l border-slate-100">
+                                    <ChevronDownIcon className="transform -rotate-90 w-4 h-4" />
                                 </div>
                             </div>
-                        </div>
+                        ))}
+                        {filteredFertilizersList.length === 0 && (
+                            <div className="col-span-full flex flex-col items-center justify-center py-12 text-slate-400 bg-slate-50 rounded-xl border border-dashed">
+                                <p>조건에 맞는 비료가 없습니다.</p>
+                            </div>
+                        )}
                     </div>
-                ))}
-                {filteredFertilizersList.length === 0 && (
-                    <div className="col-span-full flex flex-col items-center justify-center py-12 text-slate-400 bg-slate-50 rounded-xl border border-dashed">
-                        <p>조건에 맞는 비료가 없습니다.</p>
-                    </div>
-                )}
-            </div>
+                </div>
+            )}
         </section>
 
         {/* Collapsible Calculator Section */}
