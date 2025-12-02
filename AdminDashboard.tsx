@@ -618,7 +618,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         setIsAiFillLoading(true);
         setAiError(null);
         try {
-            const ai = new GoogleGenAI({ apiKey: (process.env.API_KEY as string) });
+            const apiKey = process.env.API_KEY as string;
+            const ai = new GoogleGenAI({ apiKey });
             const groupsJSON = JSON.stringify(FERTILIZER_TYPE_GROUPS);
             
             const prompt = `
@@ -720,9 +721,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 }
             }
             
-        } catch (e) {
+        } catch (e: unknown) {
             console.error("AI Fill Error:", e);
-            setAiError("분석에 실패했습니다. 올바른 데이터인지 확인해주세요.");
+            const errorMessage = e instanceof Error ? e.message : "분석에 실패했습니다. 올바른 데이터인지 확인해주세요.";
+            setAiError(errorMessage);
         } finally {
             setIsAiFillLoading(false);
         }
@@ -742,7 +744,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             reader.onload = async (event: ProgressEvent<FileReader>) => {
                 const target = event.target as FileReader;
                 if (!target) return;
-                const data = target.result;
+                const data = target.result; // string | ArrayBuffer | null
                 if (!data || typeof data === 'string') return; // Expecting ArrayBuffer for 'array' type read
                 
                 const wb = XLSX.read(data, { type: 'array' });
