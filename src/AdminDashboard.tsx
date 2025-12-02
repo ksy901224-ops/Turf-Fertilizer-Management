@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import * as api from './api';
 import * as XLSX from 'xlsx';
@@ -719,7 +720,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 }
             }
             
-        } catch (e: unknown) {
+        } catch (e: any) {
             console.error("AI Fill Error:", e);
             const errorMessage = e instanceof Error ? e.message : "분석에 실패했습니다. 올바른 데이터인지 확인해주세요.";
             setAiError(errorMessage);
@@ -733,4 +734,570 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         await processAiRequest(aiInputText);
     };
 
-    const handle
+    const handleAiSmartFillFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.name.endsWith('.csv')) {
+            const reader = new FileReader();
+            reader.onload = async (event: ProgressEvent<FileReader>) => {
+                const target = event.target as FileReader;
+                if (!target) return;
+                const data = target.result;
+                if (!data || typeof data === 'string') return; // Expecting ArrayBuffer for 'array' type read
+                
+                const wb = XLSX.read(data, { type: 'array' });
+                const wsname = wb.SheetNames[0];
+                if (!wsname) return;
+                const ws = wb.Sheets[wsname];
+                const csvData = XLSX.utils.sheet_to_csv(ws);
+                await processAiRequest(`Extracted Spreadsheet Data:\n${csvData}`);
+            };
+            reader.readAsArrayBuffer(file);
+        } else if (file.type.startsWith('image/') || file.type === 'application/pdf') {
+            const reader = new FileReader();
+            reader.onloadend = async (event: ProgressEvent<FileReader>) => {
+                const target = event.target as FileReader;
+                if (!target) return;
+                const result = target.result;
+                if (typeof result !== 'string') return;
+                
+                const base64Data = result.split(',')[1];
+                const mimeType = file.type;
+                
+                await processAiRequest("Analyze this document/image.", [{
+                    inlineData: {
+                        data: base64Data,
+                        mimeType: mimeType
+                    }
+                }]);
+            };
+            reader.readAsDataURL(file);
+        } else {
+             // Treat as text file
+            const reader = new FileReader();
+            reader.onload = async (event: ProgressEvent<FileReader>) => {
+                const target = event.target as FileReader;
+                if (!target) return;
+                const text = target.result;
+                if (typeof text !== 'string') return;
+                await processAiRequest(`File Content:\n${text}`);
+            }
+            reader.readAsText(file);
+        }
+    };
+
+    const SortIcon = ({ field }: { field: keyof UserDataSummary }) => {
+        if (userSortField !== field) return <span className="text-slate-300 ml-1">↕</span>;
+        return <span className="text-blue-600 ml-1">{userSortOrder === 'asc' ? '↑' : '↓'}</span>;
+    };
+
+    return (
+        <div className="min-h-screen bg-slate-100 font-sans p-4 sm:p-6 lg:p-8">
+            <div className="max-w-7xl mx-auto space-y-6">
+                <header className="flex justify-between items-center bg-white p-4 rounded-lg shadow-sm">
+                    <div>
+                        <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+                            <DashboardIcon /> 관리자 대시보드
+                        </h1>
+                        <p className="text-slate-500 text-sm">전체 사용자 및 마스터 데이터 관리</p>
+                    </div>
+                    <button onClick={onLogout} className="flex items-center gap-2 px-4 py-2 bg-slate-200 text-slate-700 font-semibold rounded-md hover:bg-slate-300 transition-colors">
+                        <LogoutIcon /> 로그아웃
+                    </button>
+                </header>
+
+                {/* Pending Approvals Section */}
+                {pendingUsersList.length > 0 && (
+                    <section className="bg-amber-50 border-l-4 border-amber-500 p-6 rounded-r-lg shadow-md animate-fadeIn">
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-4">
+                            <h2 className="text-xl font-bold text-amber-800 flex items-center gap-2">
+                                ⏳ 승인 대기 중인 사용자 ({pendingUsersList.length})
+                            </h2>
+                            
+                            <div className="flex items-center gap-3 w-full sm:w-auto">
+                                <label className="flex items-center gap-2 text-sm font-semibold text-amber-900 cursor-pointer select-none">
+                                    <input 
+                                        type="checkbox" 
+                                        checked={pendingUsersList.length > 0 && selectedPendingUsers.size === pendingUsersList.length}
+                                        onChange={toggleSelectAllPending}
+                                        className="w-4 h-4 text-amber-600 rounded focus:ring-amber-500"
+                                    />
+                                    전체 선택
+                                </label>
+                                {selectedPendingUsers.size > 0 && (
+                                    <div className="flex gap-2 ml-auto sm:ml-0">
+                                        <button 
+                                            onClick={handleBulkApprove}
+                                            className="px-3 py-1.5 bg-green-600 text-white text-xs font-bold rounded shadow-sm hover:bg-green-700 transition-colors"
+                                        >
+                                            선택 승인 ({selectedPendingUsers.size})
+                                        </button>
+                                        <button 
+                                            onClick={handleBulkReject}
+                                            className="px-3 py-1.5 bg-red-500 text-white text-xs font-bold rounded shadow-sm hover:bg-red-600 transition-colors"
+                                        >
+                                            선택 거절
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {pendingUsersList.map(user => (
+                                <div 
+                                    key={user.username} 
+                                    className={`bg-white p-4 rounded-lg shadow-sm border flex flex-col justify-between h-full transition-all ${selectedPendingUsers.has(user.username) ? 'border-amber-400 ring-2 ring-amber-200' : 'border-amber-200'}`}
+                                >
+                                    <div>
+                                        <div className="flex justify-between items-start mb-2">
+                                            <div className="flex items-center gap-3">
+                                                <input 
+                                                    type="checkbox" 
+                                                    checked={selectedPendingUsers.has(user.username)}
+                                                    onChange={() => togglePendingUserSelection(user.username)}
+                                                    className="w-5 h-5 text-amber-600 rounded focus:ring-amber-500 cursor-pointer"
+                                                />
+                                                <h3 className="font-bold text-lg text-slate-800">{user.username}</h3>
+                                            </div>
+                                            <span className="px-2 py-0.5 bg-red-100 text-red-600 text-xs font-bold rounded-full border border-red-200 whitespace-nowrap">
+                                                대기 중
+                                            </span>
+                                        </div>
+                                        <div className="pl-8">
+                                            <p className="text-sm text-slate-600 mb-1">
+                                                <span className="font-semibold">골프장:</span> {user.golfCourse}
+                                            </p>
+                                            <p className="text-xs text-slate-500 mb-4">
+                                                가입 요청 승인이 필요합니다.
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <div className="flex gap-2 mt-auto pl-8">
+                                        <button 
+                                            onClick={() => handleApproveUser(user.username)}
+                                            className="flex-1 py-2 bg-green-500 hover:bg-green-600 text-white text-sm font-bold rounded shadow-sm transition-colors"
+                                        >
+                                            승인
+                                        </button>
+                                        <button 
+                                            onClick={() => handleDeleteUser(user.username)}
+                                            className="flex-1 py-2 bg-white border border-red-200 text-red-500 hover:bg-red-50 text-sm font-bold rounded shadow-sm transition-colors"
+                                        >
+                                            거절
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+                )}
+
+                {/* Tabs */}
+                <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+                    <div className="flex border-b">
+                        <button 
+                            className={`flex-1 py-4 text-center font-bold transition-colors ${activeTab === 'users' ? 'bg-slate-50 text-blue-600 border-b-2 border-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}
+                            onClick={() => setActiveTab('users')}
+                        >
+                            <span className="flex items-center justify-center gap-2"><UsersIcon /> 사용자 관리</span>
+                        </button>
+                        <button 
+                            className={`flex-1 py-4 text-center font-bold transition-colors ${activeTab === 'fertilizers' ? 'bg-slate-50 text-green-600 border-b-2 border-green-600' : 'text-slate-500 hover:bg-slate-50'}`}
+                            onClick={() => setActiveTab('fertilizers')}
+                        >
+                            <span className="flex items-center justify-center gap-2"><ClipboardListIcon /> 마스터 비료 목록 관리</span>
+                        </button>
+                    </div>
+
+                    <div className="p-6">
+                        {activeTab === 'users' ? (
+                            <div className="space-y-4">
+                                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4">
+                                    <h3 className="font-bold text-slate-700">승인된 사용자 목록 ({processedUsers.length})</h3>
+                                    <div className="w-full sm:w-64">
+                                        <input 
+                                            type="text" 
+                                            placeholder="골프장 또는 사용자명 검색..." 
+                                            value={userSearchTerm}
+                                            onChange={(e) => setUserSearchTerm(e.target.value)}
+                                            className="w-full px-3 py-2 border rounded-md text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                        />
+                                    </div>
+                                </div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm text-left border-collapse">
+                                        <thead className="bg-slate-100 text-slate-600 uppercase">
+                                            <tr>
+                                                <th className="p-3 border-b cursor-pointer hover:bg-slate-200 transition-colors select-none" onClick={() => handleSort('golfCourse')}>
+                                                    골프장 <SortIcon field="golfCourse" />
+                                                </th>
+                                                <th className="p-3 border-b cursor-pointer hover:bg-slate-200 transition-colors select-none" onClick={() => handleSort('username')}>
+                                                    사용자명 <SortIcon field="username" />
+                                                </th>
+                                                <th className="p-3 border-b cursor-pointer hover:bg-slate-200 transition-colors select-none" onClick={() => handleSort('lastActivity')}>
+                                                    최근 활동 <SortIcon field="lastActivity" />
+                                                </th>
+                                                <th className="p-3 border-b cursor-pointer hover:bg-slate-200 transition-colors select-none" onClick={() => handleSort('logCount')}>
+                                                    기록 수 <SortIcon field="logCount" />
+                                                </th>
+                                                <th className="p-3 border-b cursor-pointer hover:bg-slate-200 transition-colors select-none" onClick={() => handleSort('totalCost')}>
+                                                    총 비용 <SortIcon field="totalCost" />
+                                                </th>
+                                                <th className="p-3 border-b text-center">관리</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {processedUsers.map(u => (
+                                                <tr key={u.username} className="hover:bg-slate-50">
+                                                    <td className="p-3 font-semibold text-slate-700">{u.golfCourse}</td>
+                                                    <td className="p-3 text-slate-600">{u.username}</td>
+                                                    <td className="p-3 text-slate-500">{u.lastActivity || '-'}</td>
+                                                    <td className="p-3 text-slate-500">{u.logCount}건</td>
+                                                    <td className="p-3 text-slate-600 font-mono">{Math.round(u.totalCost).toLocaleString()}원</td>
+                                                    <td className="p-3 text-center flex justify-center gap-2">
+                                                        <button
+                                                            onClick={() => setSelectedUserForDetail(u)}
+                                                            className="text-blue-500 hover:text-blue-700 px-2 py-1 rounded hover:bg-blue-50 transition-colors text-xs border border-blue-200"
+                                                        >
+                                                            상세
+                                                        </button>
+                                                        <button
+                                                            onClick={() => exportUserLogsToExcel(u)}
+                                                            className="text-green-500 hover:text-green-700 p-1.5 rounded hover:bg-green-50 transition-colors text-xs border border-green-200"
+                                                            title="엑셀 내보내기"
+                                                        >
+                                                            <DownloadIcon className="w-4 h-4" />
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => handleDeleteUser(u.username)}
+                                                            className="text-red-400 hover:text-red-600 p-1.5 rounded-full hover:bg-red-50 transition-colors"
+                                                            title="사용자 삭제"
+                                                        >
+                                                            <TrashIcon className="w-4 h-4" />
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                            {processedUsers.length === 0 && (
+                                                <tr>
+                                                    <td colSpan={6} className="p-8 text-center text-slate-400">
+                                                        {approvedUsersList.length === 0 ? '승인된 사용자가 없습니다.' : '검색 결과가 없습니다.'}
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        ) : (
+                            <div>
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="font-bold text-slate-700">등록된 마스터 비료 목록 ({masterFertilizers.length})</h3>
+                                    <button 
+                                        onClick={openAddModal}
+                                        className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white text-sm font-bold rounded-md hover:bg-green-700 transition-colors"
+                                    >
+                                        <PlusIcon /> 새 비료 추가
+                                    </button>
+                                </div>
+                                
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    {masterFertilizers.map((f, idx) => (
+                                        <div key={`${f.name}-${idx}`} className="border rounded-lg p-4 hover:shadow-md transition-shadow relative group bg-white">
+                                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                                                <button 
+                                                    onClick={() => openEditModal(idx, f)} 
+                                                    className="p-1 text-slate-400 hover:text-blue-500 bg-white rounded-full shadow-sm border"
+                                                    title="수정"
+                                                >
+                                                    <PencilIcon className="w-4 h-4" />
+                                                </button>
+                                                <button 
+                                                    onClick={() => handleRemoveFertilizer(idx)} 
+                                                    className="p-1 text-slate-400 hover:text-red-500 bg-white rounded-full shadow-sm border"
+                                                    title="삭제"
+                                                >
+                                                    <TrashIcon />
+                                                </button>
+                                            </div>
+                                            <div className="flex items-center gap-2 mb-2">
+                                                <span className={`text-[10px] px-2 py-0.5 rounded-full ${
+                                                    f.usage === '그린' ? 'bg-green-100 text-green-800' :
+                                                    f.usage === '티' ? 'bg-blue-100 text-blue-800' :
+                                                    'bg-orange-100 text-orange-800'
+                                                }`}>{f.usage}</span>
+                                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 truncate max-w-[100px]">{f.type}</span>
+                                                <h4 className="font-bold text-slate-800 truncate flex-1" title={f.name}>{f.name}</h4>
+                                            </div>
+                                            <div className="text-xs text-slate-600 space-y-1">
+                                                <p>성분(NPK): <span className="font-mono">{f.N}-{f.P}-{f.K}</span></p>
+                                                <p>포장: {f.unit} / 가격: {f.price.toLocaleString()}원</p>
+                                                <p>권장량: {f.rate}</p>
+                                                {f.description && <p className="text-slate-400 truncate border-t pt-1 mt-1">{f.description}</p>}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* User Detail Modal */}
+            {selectedUserForDetail && (
+                <UserDetailModal 
+                    userData={selectedUserForDetail} 
+                    onClose={() => setSelectedUserForDetail(null)} 
+                />
+            )}
+
+             {/* Bulk Preview Modal */}
+             {isBulkModalOpen && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4" onClick={() => setIsBulkModalOpen(false)}>
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+                         <div className="p-4 border-b flex justify-between items-center bg-slate-50">
+                            <h3 className="font-bold text-lg text-slate-800">📋 대량 비료 등록 미리보기 ({bulkPreviewData.length}개)</h3>
+                            <button onClick={() => setIsBulkModalOpen(false)}><CloseIcon /></button>
+                        </div>
+                        <div className="flex-1 overflow-auto p-4">
+                            <table className="w-full text-sm text-left border-collapse">
+                                <thead className="bg-slate-100 text-slate-700 sticky top-0">
+                                    <tr>
+                                        <th className="p-2 border">제품명</th>
+                                        <th className="p-2 border">용도</th>
+                                        <th className="p-2 border">타입</th>
+                                        <th className="p-2 border">NPK</th>
+                                        <th className="p-2 border">단위/가격</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {bulkPreviewData.map((item, i) => (
+                                        <tr key={i} className="border-b hover:bg-slate-50">
+                                            <td className="p-2 font-medium">{item.name}</td>
+                                            <td className="p-2">{item.usage}</td>
+                                            <td className="p-2">{item.type}</td>
+                                            <td className="p-2 font-mono">{item.N}-{item.P}-{item.K}</td>
+                                            <td className="p-2">{item.unit} / {item.price.toLocaleString()}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div className="p-4 border-t bg-slate-50 flex justify-end gap-2">
+                            <button onClick={() => setIsBulkModalOpen(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded font-semibold">취소</button>
+                            <button onClick={handleBulkSave} className="px-4 py-2 bg-blue-600 text-white rounded font-bold hover:bg-blue-700">일괄 등록하기</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Add/Edit Fertilizer Modal */}
+            {isAddFertilizerModalOpen && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4" onClick={() => setIsAddFertilizerModalOpen(false)}>
+                    <div className="bg-white rounded-lg shadow-xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
+                        <div className="p-4 border-b flex justify-between items-center bg-slate-50">
+                            <h3 className="font-bold text-slate-800">
+                                {editingFertilizerIndex !== null ? '비료 정보 수정' : '새 비료 추가'}
+                            </h3>
+                            <button onClick={() => setIsAddFertilizerModalOpen(false)}><CloseIcon /></button>
+                        </div>
+                        
+                        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                            {/* AI Smart Input Section */}
+                            <div className="bg-purple-50 rounded-xl p-4 border border-purple-100">
+                                <div className="flex justify-between items-center mb-3">
+                                    <h4 className="font-bold text-purple-900 flex items-center gap-2 text-sm">
+                                        <SparklesIcon /> AI 스마트 입력 {editingFertilizerIndex !== null && <span className="text-[10px] text-purple-600 bg-white px-1.5 rounded border border-purple-200 ml-1">수정 모드</span>}
+                                    </h4>
+                                    <label className="flex items-center gap-2 text-xs font-bold text-purple-800 cursor-pointer">
+                                        <input 
+                                            type="checkbox" 
+                                            checked={autoSaveAfterAi} 
+                                            onChange={(e) => setAutoSaveAfterAi(e.target.checked)}
+                                            className="rounded text-purple-600 focus:ring-purple-500"
+                                        />
+                                        분석 후 자동 저장
+                                    </label>
+                                </div>
+                                <div className="flex gap-2 mb-3">
+                                    <button 
+                                        onClick={() => setAiSmartTab('text')}
+                                        className={`flex-1 py-2 text-xs font-bold rounded transition-colors ${aiSmartTab === 'text' ? 'bg-purple-600 text-white shadow' : 'bg-white text-purple-600 border border-purple-200'}`}
+                                    >
+                                        텍스트 직접 입력
+                                    </button>
+                                    <button 
+                                        onClick={() => setAiSmartTab('file')}
+                                        className={`flex-1 py-2 text-xs font-bold rounded transition-colors ${aiSmartTab === 'file' ? 'bg-purple-600 text-white shadow' : 'bg-white text-purple-600 border border-purple-200'}`}
+                                    >
+                                        파일 업로드 (이미지/엑셀/PDF)
+                                    </button>
+                                </div>
+
+                                {aiSmartTab === 'text' ? (
+                                    <div className="space-y-2">
+                                        <textarea
+                                            value={aiInputText}
+                                            onChange={e => setAiInputText(e.target.value)}
+                                            placeholder="제품 설명, 성분표, 또는 여러 제품 목록을 붙여넣으세요..."
+                                            className="w-full p-2 border border-purple-200 rounded text-sm h-24 focus:ring-2 focus:ring-purple-400 focus:outline-none"
+                                        />
+                                        <button 
+                                            onClick={handleAiSmartFillText}
+                                            disabled={isAiFillLoading || !aiInputText.trim()}
+                                            className="w-full py-2 bg-purple-600 text-white font-bold rounded text-xs hover:bg-purple-700 transition-colors disabled:opacity-50 flex justify-center items-center gap-2"
+                                        >
+                                            {isAiFillLoading ? <div className="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full"></div> : <SparklesIcon />}
+                                            분석하여 {editingFertilizerIndex !== null ? '수정 내용 적용' : '자동 채우기 (대량 가능)'}
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-2">
+                                        <div className="border-2 border-dashed border-purple-300 rounded-lg p-6 text-center bg-white hover:bg-purple-50 transition-colors relative">
+                                            <input 
+                                                type="file" 
+                                                onChange={handleAiSmartFillFile}
+                                                accept="image/*,.xlsx,.xls,.csv,.pdf"
+                                                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                                                disabled={isAiFillLoading}
+                                            />
+                                            <div className="flex flex-col items-center justify-center pointer-events-none">
+                                                {isAiFillLoading ? (
+                                                    <div className="animate-spin h-8 w-8 border-4 border-purple-500 border-t-transparent rounded-full mb-2"></div>
+                                                ) : (
+                                                    <UploadIcon className="h-8 w-8 text-purple-400 mb-2" />
+                                                )}
+                                                <p className="text-xs font-bold text-purple-700">
+                                                    {isAiFillLoading ? '파일 분석 중...' : '클릭 또는 드래그하여 파일 업로드'}
+                                                </p>
+                                                <p className="text-[10px] text-purple-400 mt-1">
+                                                    지원: 이미지, Excel, PDF, CSV (대량 목록 포함)
+                                                </p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                                {aiError && (
+                                    <p className="text-xs text-red-500 mt-2 text-center">{aiError}</p>
+                                )}
+                            </div>
+
+                            <div className="border-t pt-4">
+                                <h4 className="font-bold text-slate-700 mb-3 text-sm">상세 정보 입력</h4>
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-600 mb-1">제품명</label>
+                                        <input type="text" className="w-full border p-2 rounded" value={newFertilizer.name || ''} onChange={e => setNewFertilizer({...newFertilizer, name: e.target.value})} placeholder="예: HPG-Special" />
+                                    </div>
+                                    
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-600 mb-1">상세 설명</label>
+                                        <textarea 
+                                            className="w-full border p-2 rounded text-sm" 
+                                            rows={3}
+                                            value={newFertilizer.description || ''} 
+                                            onChange={e => setNewFertilizer({...newFertilizer, description: e.target.value})} 
+                                            placeholder="제품의 특징이나 상세 설명을 입력하세요." 
+                                        />
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-600 mb-1">용도</label>
+                                            <select className="w-full border p-2 rounded" value={newFertilizer.usage} onChange={e => setNewFertilizer({...newFertilizer, usage: e.target.value as any})}>
+                                                <option value="그린">그린</option>
+                                                <option value="티">티</option>
+                                                <option value="페어웨이">페어웨이</option>
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-600 mb-1">타입</label>
+                                            <select 
+                                                className="w-full border p-2 rounded" 
+                                                value={newFertilizer.type} 
+                                                onChange={e => setNewFertilizer({...newFertilizer, type: e.target.value as any})}
+                                            >
+                                                <option value="">타입 선택</option>
+                                                {Object.entries(FERTILIZER_TYPE_GROUPS).map(([group, types]) => (
+                                                    <optgroup label={group} key={group}>
+                                                        {(types as string[]).map(t => (
+                                                            <option key={t} value={t}>{t}</option>
+                                                        ))}
+                                                    </optgroup>
+                                                ))}
+                                                <optgroup label="기타/기존">
+                                                    <option value="완효성">완효성</option>
+                                                    <option value="액상">액상</option>
+                                                    <option value="수용성">수용성</option>
+                                                    <option value="4종복합비료">4종복합</option>
+                                                    <option value="기능성제제">기능성제제</option>
+                                                    <option value="토양개량제">토양개량제</option>
+                                                    <option value="기타">기타</option>
+                                                </optgroup>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="bg-slate-50 p-3 rounded border">
+                                        <p className="text-xs font-bold text-slate-500 mb-2">성분 함량 (%)</p>
+                                        <div className="grid grid-cols-3 gap-2 mb-2">
+                                            <div><label className="text-[10px]">N (질소)</label><input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.N} onChange={e => setNewFertilizer({...newFertilizer, N: Number(e.target.value)})} /></div>
+                                            <div><label className="text-[10px]">P (인산)</label><input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.P} onChange={e => setNewFertilizer({...newFertilizer, P: Number(e.target.value)})} /></div>
+                                            <div><label className="text-[10px]">K (칼륨)</label><input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.K} onChange={e => setNewFertilizer({...newFertilizer, K: Number(e.target.value)})} /></div>
+                                        </div>
+                                        <div className="grid grid-cols-4 gap-2">
+                                             <div><label className="text-[10px]">Ca</label><input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.Ca} onChange={e => setNewFertilizer({...newFertilizer, Ca: Number(e.target.value)})} /></div>
+                                             <div><label className="text-[10px]">Mg</label><input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.Mg} onChange={e => setNewFertilizer({...newFertilizer, Mg: Number(e.target.value)})} /></div>
+                                             <div><label className="text-[10px]">S</label><input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.S} onChange={e => setNewFertilizer({...newFertilizer, S: Number(e.target.value)})} /></div>
+                                             <div><label className="text-[10px]">Fe</label><input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.Fe} onChange={e => setNewFertilizer({...newFertilizer, Fe: Number(e.target.value)})} /></div>
+                                        </div>
+                                    </div>
+                                    {/* Micronutrients and Others Section */}
+                                    <div className="bg-orange-50 p-3 rounded border border-orange-100">
+                                        <p className="text-xs font-bold text-orange-800 mb-2">미량요소 및 기타 (%)</p>
+                                        <div className="grid grid-cols-5 gap-2 mb-2">
+                                            <div><label className="text-[10px]">Mn</label><input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.Mn} onChange={e => setNewFertilizer({...newFertilizer, Mn: Number(e.target.value)})} /></div>
+                                            <div><label className="text-[10px]">Zn</label><input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.Zn} onChange={e => setNewFertilizer({...newFertilizer, Zn: Number(e.target.value)})} /></div>
+                                            <div><label className="text-[10px]">Cu</label><input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.Cu} onChange={e => setNewFertilizer({...newFertilizer, Cu: Number(e.target.value)})} /></div>
+                                            <div><label className="text-[10px]">B</label><input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.B} onChange={e => setNewFertilizer({...newFertilizer, B: Number(e.target.value)})} /></div>
+                                            <div><label className="text-[10px]">Mo</label><input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.Mo} onChange={e => setNewFertilizer({...newFertilizer, Mo: Number(e.target.value)})} /></div>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <div>
+                                                <label className="text-[10px] font-bold text-slate-700">아미노산</label>
+                                                <input type="number" className="w-full border p-1 rounded text-sm" value={newFertilizer.aminoAcid} onChange={e => setNewFertilizer({...newFertilizer, aminoAcid: Number(e.target.value)})} placeholder="%" />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-600 mb-1">포장단위</label>
+                                            <input type="text" className="w-full border p-2 rounded" value={newFertilizer.unit || ''} onChange={e => setNewFertilizer({...newFertilizer, unit: e.target.value})} placeholder="예: 20kg" />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-slate-600 mb-1">가격</label>
+                                            <input type="number" className="w-full border p-2 rounded" value={newFertilizer.price} onChange={e => setNewFertilizer({...newFertilizer, price: Number(e.target.value)})} />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-slate-600 mb-1">권장사용량</label>
+                                        <input type="text" className="w-full border p-2 rounded" value={newFertilizer.rate || ''} onChange={e => setNewFertilizer({...newFertilizer, rate: e.target.value})} placeholder="예: 20g/㎡" />
+                                    </div>
+                                    <button 
+                                        onClick={() => handleSaveFertilizer()} 
+                                        className="w-full bg-blue-600 text-white font-bold py-3 rounded hover:bg-blue-700 shadow-md transition-colors"
+                                    >
+                                        {editingFertilizerIndex !== null ? '수정 내용 저장' : '비료 추가하기'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};

@@ -5,7 +5,7 @@ import { GoogleGenAI } from '@google/genai';
 import { Fertilizer, LogEntry, NewFertilizerForm, NutrientLog, User } from './types';
 import { NUTRIENTS, FERTILIZER_GUIDE, USAGE_CATEGORIES, TYPE_CATEGORIES, MONTHLY_DISTRIBUTION } from './constants';
 import * as api from './api';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, ComposedChart, PieChart, Pie, Cell } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, ComposedChart } from 'recharts';
 import { Chatbot } from './Chatbot';
 import { ChatIcon, LogoutIcon, CalculatorIcon, TrashIcon, CalendarIcon, ClipboardListIcon, CloseIcon, PencilIcon, PlusIcon, SparklesIcon, ChevronDownIcon, ChevronUpIcon, CameraIcon, DocumentSearchIcon, UploadIcon, DownloadIcon } from './icons';
 import { Login } from './Login';
@@ -155,16 +155,6 @@ const FertilizerDetailModal: React.FC<FertilizerDetailModalProps> = ({ fertilize
 
     const hasNutrient = (n: string) => (fertilizer as any)[n] > 0;
 
-    const npkData = useMemo(() => {
-        const other = Math.max(0, 100 - (fertilizer.N + fertilizer.P + fertilizer.K));
-        return [
-            { name: 'N', value: fertilizer.N, color: '#22c55e' }, // Green
-            { name: 'P', value: fertilizer.P, color: '#3b82f6' }, // Blue
-            { name: 'K', value: fertilizer.K, color: '#f97316' }, // Orange
-            { name: '기타', value: other, color: '#e2e8f0' }      // Slate-200
-        ];
-    }, [fertilizer]);
-
     return (
         <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4" onClick={onClose}>
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
@@ -194,7 +184,7 @@ const FertilizerDetailModal: React.FC<FertilizerDetailModalProps> = ({ fertilize
                         className={`flex-1 py-3 text-sm font-semibold transition-colors ${activeTab === 'info' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50' : 'text-slate-500 hover:bg-slate-50'}`}
                         onClick={() => setActiveTab('info')}
                     >
-                        📊 제품 상세 정보
+                        📊 상세 정보
                     </button>
                     <button 
                         className={`flex-1 py-3 text-sm font-semibold transition-colors ${activeTab === 'calc' ? 'text-green-600 border-b-2 border-green-600 bg-green-50/50' : 'text-slate-500 hover:bg-slate-50'}`}
@@ -213,70 +203,46 @@ const FertilizerDetailModal: React.FC<FertilizerDetailModalProps> = ({ fertilize
                                     <h4 className="font-bold text-slate-900 mb-2 flex items-center gap-2 text-xs uppercase tracking-wider">
                                         <DocumentSearchIcon className="w-4 h-4"/> 제품 특징
                                     </h4>
-                                    <p className="whitespace-pre-line text-slate-600">{fertilizer.description}</p>
+                                    <p className="whitespace-pre-line">{fertilizer.description}</p>
                                 </div>
                             )}
 
-                            {/* Visualization & Basic Specs */}
-                            <div className="flex flex-col sm:flex-row gap-4 items-center bg-white border rounded-lg p-4 shadow-sm">
-                                <div className="w-32 h-32 relative flex-shrink-0">
-                                     <ResponsiveContainer width="100%" height="100%">
-                                        <PieChart>
-                                            <Pie 
-                                                data={npkData} 
-                                                innerRadius={35} 
-                                                outerRadius={55} 
-                                                paddingAngle={2} 
-                                                dataKey="value"
-                                                stroke="none"
-                                            >
-                                                {npkData.map((entry, index) => (
-                                                    <Cell key={`cell-${index}`} fill={entry.color} />
-                                                ))}
-                                            </Pie>
-                                            <Tooltip />
-                                        </PieChart>
-                                    </ResponsiveContainer>
-                                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                                        <span className="text-[10px] font-bold text-slate-400">NPK</span>
-                                    </div>
+                            {/* Basic Specs */}
+                            <div className="grid grid-cols-2 gap-3 text-sm">
+                                <div className="bg-white p-3 rounded-lg border flex flex-col items-center justify-center text-center">
+                                    <span className="text-slate-400 text-xs mb-1">포장 단위</span>
+                                    <span className="font-bold text-slate-800">{fertilizer.unit}</span>
                                 </div>
-                                <div className="grid grid-cols-2 gap-3 w-full text-sm">
-                                    <div className="flex flex-col">
-                                        <span className="text-slate-400 text-xs">포장 단위</span>
-                                        <span className="font-bold text-slate-800">{fertilizer.unit}</span>
-                                    </div>
-                                    <div className="flex flex-col">
-                                        <span className="text-slate-400 text-xs">권장 사용량</span>
-                                        <span className="font-bold text-slate-800">{fertilizer.rate}</span>
-                                    </div>
-                                    <div className="flex flex-col">
-                                        <span className="text-slate-400 text-xs">가격 (추정)</span>
-                                        <span className="font-bold text-slate-800">{fertilizer.price.toLocaleString()}원</span>
-                                    </div>
-                                    <div className="flex flex-col">
-                                        <span className="text-slate-400 text-xs">NPK 비율</span>
-                                        <span className="font-bold text-slate-800">{fertilizer.npkRatio || `${fertilizer.N}-${fertilizer.P}-${fertilizer.K}`}</span>
-                                    </div>
+                                <div className="bg-white p-3 rounded-lg border flex flex-col items-center justify-center text-center">
+                                    <span className="text-slate-400 text-xs mb-1">가격</span>
+                                    <span className="font-bold text-slate-800">{fertilizer.price.toLocaleString()}원</span>
+                                </div>
+                                <div className="bg-white p-3 rounded-lg border flex flex-col items-center justify-center text-center">
+                                    <span className="text-slate-400 text-xs mb-1">권장 사용량</span>
+                                    <span className="font-bold text-slate-800">{fertilizer.rate}</span>
+                                </div>
+                                <div className="bg-white p-3 rounded-lg border flex flex-col items-center justify-center text-center">
+                                    <span className="text-slate-400 text-xs mb-1">NPK 비율</span>
+                                    <span className="font-bold text-slate-800">{fertilizer.npkRatio || `${fertilizer.N}-${fertilizer.P}-${fertilizer.K}`}</span>
                                 </div>
                             </div>
 
                             {/* Detailed Nutrient Analysis */}
                             <div>
                                 <h4 className="font-bold text-slate-800 mb-3 flex items-center gap-2 text-sm border-b pb-2">
-                                    🌱 성분 분석표 <span className="text-[10px] font-normal text-slate-500 ml-auto">1㎡ 시비 시 투입량</span>
+                                    🌱 성분 함량 및 투입량 <span className="text-[10px] font-normal text-slate-500 ml-auto">권장량 기준</span>
                                 </h4>
                                 
                                 <div className="space-y-4">
                                     {/* Primary */}
                                     <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
-                                        <p className="text-[10px] font-bold text-slate-500 mb-2 uppercase tracking-wide">3대 다량 요소 (Macro)</p>
+                                        <p className="text-xs font-bold text-slate-500 mb-2">다량 요소 (Macro)</p>
                                         <div className="grid grid-cols-3 gap-2">
                                             {categorizedNutrients.primary.map(n => (
-                                                <div key={n} className="bg-white rounded p-2 text-center border shadow-sm flex flex-col items-center">
-                                                    <div className={`text-xs font-black ${n==='N'?'text-green-600':n==='P'?'text-blue-600':'text-orange-600'}`}>{n}</div>
-                                                    <div className="text-lg font-bold text-slate-800 leading-none my-1">{(fertilizer as any)[n]}%</div>
-                                                    <div className="text-[10px] text-slate-400">{details.nutrients[n]?.toFixed(2)}g</div>
+                                                <div key={n} className="bg-white rounded p-2 text-center border shadow-sm">
+                                                    <div className={`text-xs font-bold ${n==='N'?'text-green-600':n==='P'?'text-blue-600':'text-orange-600'}`}>{n}</div>
+                                                    <div className="text-sm font-bold text-slate-800">{(fertilizer as any)[n]}%</div>
+                                                    <div className="text-[10px] text-slate-500 mt-1 pt-1 border-t">{details.nutrients[n]?.toFixed(2)}g/㎡</div>
                                                 </div>
                                             ))}
                                         </div>
@@ -285,12 +251,12 @@ const FertilizerDetailModal: React.FC<FertilizerDetailModalProps> = ({ fertilize
                                     {/* Secondary */}
                                     {categorizedNutrients.secondary.some(hasNutrient) && (
                                         <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
-                                            <p className="text-[10px] font-bold text-slate-500 mb-2 uppercase tracking-wide">2차 요소 (Secondary)</p>
+                                            <p className="text-xs font-bold text-slate-500 mb-2">2차 요소 (Secondary)</p>
                                             <div className="grid grid-cols-3 gap-2">
                                                 {categorizedNutrients.secondary.filter(hasNutrient).map(n => (
-                                                    <div key={n} className="bg-white rounded p-2 text-center border">
+                                                    <div key={n} className="bg-white rounded p-1.5 text-center border">
                                                         <div className="text-[10px] text-slate-500 font-medium">{n}</div>
-                                                        <div className="text-sm font-bold text-slate-800">{(fertilizer as any)[n]}%</div>
+                                                        <div className="text-xs font-bold text-slate-800">{(fertilizer as any)[n]}%</div>
                                                     </div>
                                                 ))}
                                             </div>
@@ -300,18 +266,18 @@ const FertilizerDetailModal: React.FC<FertilizerDetailModalProps> = ({ fertilize
                                     {/* Micro & Others */}
                                     {(categorizedNutrients.micro.some(hasNutrient) || (fertilizer.aminoAcid && fertilizer.aminoAcid > 0)) && (
                                         <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
-                                            <p className="text-[10px] font-bold text-slate-500 mb-2 uppercase tracking-wide">미량 요소 및 기타 (Micro & Others)</p>
+                                            <p className="text-xs font-bold text-slate-500 mb-2">미량 요소 및 기타 (Micro & Others)</p>
                                             <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
                                                 {categorizedNutrients.micro.filter(hasNutrient).map(n => (
-                                                    <div key={n} className="bg-white rounded p-2 text-center border">
+                                                    <div key={n} className="bg-white rounded p-1.5 text-center border">
                                                         <div className="text-[10px] text-slate-500 font-medium">{n}</div>
-                                                        <div className="text-sm font-bold text-slate-800">{(fertilizer as any)[n]}%</div>
+                                                        <div className="text-xs font-bold text-slate-800">{(fertilizer as any)[n]}%</div>
                                                     </div>
                                                 ))}
                                                 {fertilizer.aminoAcid !== undefined && fertilizer.aminoAcid > 0 && (
-                                                    <div className="bg-purple-50 rounded p-2 text-center border border-purple-100 col-span-2">
+                                                    <div className="bg-purple-50 rounded p-1.5 text-center border border-purple-100 col-span-2">
                                                         <div className="text-[10px] text-purple-600 font-bold">아미노산</div>
-                                                        <div className="text-sm font-bold text-purple-800">{fertilizer.aminoAcid}%</div>
+                                                        <div className="text-xs font-bold text-purple-800">{fertilizer.aminoAcid}%</div>
                                                     </div>
                                                 )}
                                             </div>
@@ -1625,58 +1591,66 @@ export default function TurfFertilizerApp() {
                     <div 
                         key={fertilizer.name} 
                         onClick={() => setDetailModalFertilizer(fertilizer)}
-                        className="bg-white rounded-xl shadow-sm border border-slate-200 hover:shadow-md transition-all cursor-pointer group flex flex-col relative overflow-hidden h-full"
+                        className="bg-white rounded-xl border border-slate-200 shadow-sm hover:shadow-md transition-all cursor-pointer overflow-hidden flex flex-col h-full group hover:-translate-y-0.5"
                     >
-                        {/* Colored Stripe on Left */}
-                        <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${
+                        {/* Usage Color Bar */}
+                        <div className={`h-1.5 w-full ${
                             fertilizer.usage === '그린' ? 'bg-green-500' :
                             fertilizer.usage === '티' ? 'bg-blue-500' :
                             'bg-orange-500'
                         }`}></div>
                         
-                        <div className="p-5 pl-7 flex flex-col h-full">
+                        <div className="p-4 flex flex-col flex-1">
+                            {/* Badges Header */}
                             <div className="flex justify-between items-start mb-2">
-                               <div>
-                                   <span className="text-[10px] font-bold tracking-wider text-slate-500 uppercase block mb-0.5">{fertilizer.type}</span>
-                                   <h3 className="font-bold text-slate-800 text-lg leading-tight group-hover:text-blue-700 transition-colors line-clamp-1">{fertilizer.name}</h3>
-                               </div>
-                               <span className={`text-[10px] px-2 py-1 rounded-full font-bold ml-2 whitespace-nowrap ${
-                                   fertilizer.usage === '그린' ? 'bg-green-100 text-green-800' :
-                                   fertilizer.usage === '티' ? 'bg-blue-100 text-blue-800' :
-                                   'bg-orange-100 text-orange-800'
-                               }`}>
-                                   {fertilizer.usage}
-                               </span>
-                            </div>
-
-                            <p className="text-xs text-slate-500 line-clamp-2 mb-4 h-8">{fertilizer.description || "상세 설명이 없습니다."}</p>
-
-                            {/* NPK Row */}
-                            <div className="flex gap-2 mb-4">
-                                 <div className="flex-1 bg-green-50 border border-green-100 rounded-lg p-2 text-center">
-                                     <div className="text-[10px] text-green-600 font-bold mb-0.5">N</div>
-                                     <div className="text-lg font-black text-slate-700 leading-none">{fertilizer.N}</div>
-                                 </div>
-                                 <div className="flex-1 bg-blue-50 border border-blue-100 rounded-lg p-2 text-center">
-                                     <div className="text-[10px] text-blue-600 font-bold mb-0.5">P</div>
-                                     <div className="text-lg font-black text-slate-700 leading-none">{fertilizer.P}</div>
-                                 </div>
-                                 <div className="flex-1 bg-orange-50 border border-orange-100 rounded-lg p-2 text-center">
-                                     <div className="text-[10px] text-orange-600 font-bold mb-0.5">K</div>
-                                     <div className="text-lg font-black text-slate-700 leading-none">{fertilizer.K}</div>
-                                 </div>
+                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                    fertilizer.usage === '그린' ? 'bg-green-100 text-green-800' :
+                                    fertilizer.usage === '티' ? 'bg-blue-100 text-blue-800' :
+                                    'bg-orange-100 text-orange-800'
+                                }`}>
+                                    {fertilizer.usage}
+                                </span>
+                                <span className="text-[10px] text-slate-500 border border-slate-200 px-2 py-0.5 rounded-full bg-slate-50 font-medium tracking-tight truncate max-w-[60%]">
+                                    {fertilizer.type}
+                                </span>
                             </div>
                             
-                            <div className="mt-auto flex justify-between items-center pt-3 border-t border-slate-100">
-                                 <span className="text-xs text-slate-400 font-mono">{fertilizer.unit}</span>
-                                 <div className="flex items-center gap-2">
+                            {/* Product Name */}
+                            <h3 className="font-bold text-slate-800 text-lg mb-1 leading-tight group-hover:text-blue-600 transition-colors line-clamp-2 min-h-[1.5em]">
+                                {fertilizer.name}
+                            </h3>
+                            
+                            {/* Description Snippet */}
+                            <p className="text-xs text-slate-500 line-clamp-2 mb-3 leading-relaxed min-h-[2.5em]">
+                                {fertilizer.description || "설명이 없습니다."}
+                            </p>
+                            
+                            {/* Footer: Stats & Stock */}
+                            <div className="mt-auto space-y-3">
+                                {/* Visual NPK Pills */}
+                                <div className="flex items-center gap-1.5 w-full">
+                                    <div className="flex-1 bg-green-50 border border-green-100 rounded px-1.5 py-1 flex flex-col items-center justify-center min-w-[30%]">
+                                        <span className="text-[10px] text-green-600 font-bold uppercase">N</span>
+                                        <span className="text-sm font-black text-green-700">{fertilizer.N}</span>
+                                    </div>
+                                    <div className="flex-1 bg-blue-50 border border-blue-100 rounded px-1.5 py-1 flex flex-col items-center justify-center min-w-[30%]">
+                                        <span className="text-[10px] text-blue-600 font-bold uppercase">P</span>
+                                        <span className="text-sm font-black text-blue-700">{fertilizer.P}</span>
+                                    </div>
+                                    <div className="flex-1 bg-orange-50 border border-orange-100 rounded px-1.5 py-1 flex flex-col items-center justify-center min-w-[30%]">
+                                        <span className="text-[10px] text-orange-600 font-bold uppercase">K</span>
+                                        <span className="text-sm font-black text-orange-700">{fertilizer.K}</span>
+                                    </div>
+                                </div>
+
+                                <div className="border-t border-slate-100 pt-2 flex items-center justify-between">
+                                    <span className="text-xs text-slate-400 font-mono">{fertilizer.unit}</span>
                                     {fertilizer.stock !== undefined && (
-                                        <span className={`text-[10px] ${fertilizer.stock <= 5 ? 'text-red-500 font-bold' : 'text-slate-400'}`}>
+                                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${fertilizer.stock <= 5 ? 'bg-red-50 text-red-600' : 'bg-slate-100 text-slate-500'}`}>
                                             재고: {fertilizer.stock}
                                         </span>
                                     )}
-                                    <span className="text-xs font-bold text-blue-600 group-hover:underline">상세보기 →</span>
-                                 </div>
+                                </div>
                             </div>
                         </div>
                     </div>
