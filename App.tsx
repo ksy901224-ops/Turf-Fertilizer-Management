@@ -1621,56 +1621,62 @@ export default function TurfFertilizerApp() {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {filteredFertilizersList.map(fertilizer => (
                             <div 
                                 key={fertilizer.name} 
                                 onClick={() => setDetailModalFertilizer(fertilizer)}
-                                className="group bg-white rounded-lg border border-slate-200 shadow-sm hover:shadow-md hover:border-blue-400 transition-all cursor-pointer relative overflow-hidden flex items-stretch"
+                                className={`
+                                    group relative bg-white rounded-lg border border-slate-200 shadow-sm 
+                                    hover:shadow-md hover:border-blue-400 transition-all cursor-pointer 
+                                    flex flex-col p-3
+                                `}
                             >
-                                {/* Usage Indicator Strip */}
-                                <div className={`w-1.5 ${
-                                    fertilizer.usage === '그린' ? 'bg-green-500' :
-                                    fertilizer.usage === '티' ? 'bg-blue-500' :
-                                    'bg-orange-500'
-                                }`}></div>
-                                
-                                <div className="p-3 flex-1 flex flex-col justify-between">
-                                    <div className="flex justify-between items-start">
-                                        <div>
-                                            <h3 className="text-sm font-bold text-slate-800 group-hover:text-blue-700">{fertilizer.name}</h3>
-                                            <span className="text-[10px] text-slate-500">{fertilizer.type}</span>
-                                        </div>
+                                {/* Top Row: Name and Price */}
+                                <div className="flex justify-between items-start mb-1">
+                                    <div className="flex items-center gap-2 overflow-hidden">
+                                        {/* Usage Indicator Dot */}
+                                        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                                            fertilizer.usage === '그린' ? 'bg-green-500' : 
+                                            fertilizer.usage === '티' ? 'bg-blue-500' : 
+                                            'bg-orange-500'
+                                        }`} title={fertilizer.usage}></div>
+                                        
+                                        <h3 className="font-bold text-slate-800 text-sm truncate">
+                                            {fertilizer.name}
+                                        </h3>
+                                        
                                         {/* NPK Badge */}
-                                        <div className="text-[10px] font-mono font-bold bg-slate-100 rounded px-1.5 py-0.5 text-slate-600">
-                                             {fertilizer.N}-{fertilizer.P}-{fertilizer.K}
-                                        </div>
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-mono border border-slate-200 flex-shrink-0">
+                                            {fertilizer.N}-{fertilizer.P}-{fertilizer.K}
+                                        </span>
                                     </div>
                                     
-                                    {/* Inline Description Snippet */}
-                                    <div className="text-xs text-slate-400 mt-1 truncate pr-2">
-                                        {fertilizer.description || "상세 설명 없음"}
-                                    </div>
-
-                                    <div className="flex justify-between items-end mt-2 pt-2 border-t border-slate-50">
-                                         <div className="text-xs text-slate-500">
-                                             {fertilizer.unit} / {fertilizer.rate}
-                                         </div>
-                                         <div className="font-bold text-slate-700 text-sm">
-                                             {fertilizer.price.toLocaleString()}원
-                                         </div>
+                                    <div className="text-right pl-2 flex-shrink-0">
+                                        <span className="font-bold text-slate-700 text-sm">{fertilizer.price.toLocaleString()}</span>
+                                        <span className="text-[10px] text-slate-400 font-normal">원/{fertilizer.unit}</span>
                                     </div>
                                 </div>
-                                
-                                {/* Action Arrow / Icon */}
-                                <div className="w-8 flex items-center justify-center bg-slate-50 text-slate-300 group-hover:text-blue-500 transition-colors border-l border-slate-100">
-                                    <ChevronDownIcon className="transform -rotate-90 w-4 h-4" />
+
+                                {/* Middle: Description */}
+                                <p className="text-xs text-slate-500 leading-snug line-clamp-2 mb-2 min-h-[2.5em]">
+                                    {fertilizer.description || "상세 설명 없음"}
+                                </p>
+
+                                {/* Bottom: Type and Action */}
+                                <div className="mt-auto flex justify-between items-center pt-2 border-t border-slate-50">
+                                    <span className="text-[10px] text-slate-400 bg-slate-50 px-2 py-0.5 rounded">
+                                        {fertilizer.type}
+                                    </span>
+                                    <span className="text-[10px] text-blue-500 font-semibold opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                                        상세보기 <ChevronDownIcon className="w-3 h-3 -rotate-90"/>
+                                    </span>
                                 </div>
                             </div>
                         ))}
                         {filteredFertilizersList.length === 0 && (
-                            <div className="col-span-full flex flex-col items-center justify-center py-12 text-slate-400 bg-slate-50 rounded-xl border border-dashed">
-                                <p>조건에 맞는 비료가 없습니다.</p>
+                            <div className="col-span-full py-12 text-center bg-slate-50 rounded-xl border border-dashed border-slate-300">
+                                <p className="text-slate-400 text-sm">조건에 맞는 비료가 없습니다.</p>
                             </div>
                         )}
                     </div>
