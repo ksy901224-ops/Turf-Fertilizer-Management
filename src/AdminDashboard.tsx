@@ -344,6 +344,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         usage: '그린'
     });
 
+    // Bulk Upload State
+    const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
+    const [bulkPreviewData, setBulkPreviewData] = useState<Fertilizer[]>([]);
+
     // Sorting and Filtering State for Approved Users
     const [userSearchTerm, setUserSearchTerm] = useState('');
     const [userSortField, setUserSortField] = useState<keyof UserDataSummary>('lastActivity');
@@ -594,6 +598,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         }
     };
 
+    const handleBulkSave = async () => {
+        if (bulkPreviewData.length === 0) return;
+        
+        // Merge bulk data into current list
+        const newList = [...masterFertilizers, ...bulkPreviewData];
+        await api.saveFertilizers('admin', newList);
+        setMasterFertilizers(newList);
+        
+        setBulkPreviewData([]);
+        setIsBulkModalOpen(false);
+        alert(`${bulkPreviewData.length}개의 비료가 추가되었습니다.`);
+    };
+
     // --- AI Smart Fill Logic ---
 
     const processAiRequest = async (promptText: string, inlineDataParts: any[] = []) => {
@@ -605,7 +622,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             
             const prompt = `
                 Analyze the provided fertilizer information (Text, Image, Excel, PDF, or CSV).
-                Extract the following details and return ONLY a JSON object:
+                
+                **Task:**
+                If the input contains MULTIPLE fertilizer products (e.g. a list, table, or catalog), output a JSON ARRAY of objects.
+                If it contains only ONE product, output a SINGLE JSON object.
+                
+                **Extraction Schema (for each item):**
                 {
                     "name": "Product Name",
                     "usage": "One of ['그린', '티', '페어웨이']",
@@ -623,9 +645,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                     "aminoAcid": Number (Percentage of Amino Acids if present)
                 }
                 
-                Important Rules:
+                **Important Rules:**
                 1. **Usage Inference:** If 'usage' is not explicitly stated, infer it from context keywords (e.g., 'Bentgrass'/'Putting Green' -> '그린', 'Zoysia' -> '페어웨이'). Default to '그린' if unsure.
-                2. **Type Matching:** You MUST choose the "type" field from the specific strings in the provided JSON hierarchy (e.g., "N-P-K 균형 비료", "토양 개량제 (Ca/Mg/S)"). Do NOT make up new types.
+                2. **Type Matching:** You MUST choose the "type" field from the specific strings in the provided JSON hierarchy.
                 3. **Description:** Extract a good summary (2-3 sentences) for the description field.
                 4. Ensure all nutrient values are numbers (percentages). If not found, use 0. Extract micronutrients and amino acid % carefully.
                 5. Do NOT include any markdown formatting or explanations. Just the raw JSON.
@@ -652,20 +674,49 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             text = text.replace(/```json/g, '').replace(/```/g, '').trim();
             const data = JSON.parse(text);
 
-            const parsedData = {
-                ...newFertilizer,
-                ...data,
-                // Ensure usage is valid
-                usage: ['그린', '티', '페어웨이'].includes(data.usage) ? data.usage : '그린',
-                // Keep type as string, validation happens via UI selection mostly
-            };
-
-            setNewFertilizer(parsedData);
-            
-            // Auto Save Logic
-            if (autoSaveAfterAi) {
-                // Must call save with the parsed data directly, as state update is async
-                await handleSaveFertilizer(parsedData);
+            if (Array.isArray(data)) {
+                // Handle Bulk Import List
+                const validList: Fertilizer[] = data.map(item => ({
+                     name: item.name || 'Unknown Product',
+                     usage: ['그린', '티', '페어웨이'].includes(item.usage) ? item.usage : '그린',
+                     type: item.type || '기타',
+                     N: Number(item.N || 0), P: Number(item.P || 0), K: Number(item.K || 0),
+                     Ca: Number(item.Ca || 0), Mg: Number(item.Mg || 0), S: Number(item.S || 0),
+                     Fe: Number(item.Fe || 0), Mn: Number(item.Mn || 0), Zn: Number(item.Zn || 0),
+                     Cu: Number(item.Cu || 0), B: Number(item.B || 0), Mo: Number(item.Mo || 0),
+                     Cl: Number(item.Cl || 0), Na: Number(item.Na || 0), Si: Number(item.Si || 0),
+                     Ni: Number(item.Ni || 0), Co: Number(item.Co || 0), V: Number(item.V || 0),
+                     aminoAcid: Number(item.aminoAcid || 0),
+                     price: Number(item.price || 0),
+                     unit: item.unit || '20kg',
+                     rate: item.rate || '20g/㎡',
+                     stock: 0,
+                     lowStockAlertEnabled: false,
+                     description: item.description || ''
+                }));
+                
+                setBulkPreviewData(validList);
+                setIsBulkModalOpen(true);
+                // Close single add modal if open
+                setIsAddFertilizerModalOpen(false);
+                
+            } else {
+                // Single Item Update
+                const parsedData = {
+                    ...newFertilizer,
+                    ...data,
+                    // Ensure usage is valid
+                    usage: ['그린', '티', '페어웨이'].includes(data.usage) ? data.usage : '그린',
+                    // Keep type as string, validation happens via UI selection mostly
+                };
+    
+                setNewFertilizer(parsedData);
+                
+                // Auto Save Logic
+                if (autoSaveAfterAi) {
+                    // Must call save with the parsed data directly, as state update is async
+                    await handleSaveFertilizer(parsedData);
+                }
             }
             
         } catch (e) {
@@ -999,6 +1050,46 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                     userData={selectedUserForDetail} 
                     onClose={() => setSelectedUserForDetail(null)} 
                 />
+            )}
+
+             {/* Bulk Preview Modal */}
+             {isBulkModalOpen && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4" onClick={() => setIsBulkModalOpen(false)}>
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+                         <div className="p-4 border-b flex justify-between items-center bg-slate-50">
+                            <h3 className="font-bold text-lg text-slate-800">📋 대량 비료 등록 미리보기 ({bulkPreviewData.length}개)</h3>
+                            <button onClick={() => setIsBulkModalOpen(false)}><CloseIcon /></button>
+                        </div>
+                        <div className="flex-1 overflow-auto p-4">
+                            <table className="w-full text-sm text-left border-collapse">
+                                <thead className="bg-slate-100 text-slate-700 sticky top-0">
+                                    <tr>
+                                        <th className="p-2 border">제품명</th>
+                                        <th className="p-2 border">용도</th>
+                                        <th className="p-2 border">타입</th>
+                                        <th className="p-2 border">NPK</th>
+                                        <th className="p-2 border">단위/가격</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {bulkPreviewData.map((item, i) => (
+                                        <tr key={i} className="border-b hover:bg-slate-50">
+                                            <td className="p-2 font-medium">{item.name}</td>
+                                            <td className="p-2">{item.usage}</td>
+                                            <td className="p-2">{item.type}</td>
+                                            <td className="p-2 font-mono">{item.N}-{item.P}-{item.K}</td>
+                                            <td className="p-2">{item.unit} / {item.price.toLocaleString()}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        <div className="p-4 border-t bg-slate-50 flex justify-end gap-2">
+                            <button onClick={() => setIsBulkModalOpen(false)} className="px-4 py-2 text-slate-600 hover:bg-slate-200 rounded font-semibold">취소</button>
+                            <button onClick={handleBulkSave} className="px-4 py-2 bg-blue-600 text-white rounded font-bold hover:bg-blue-700">일괄 등록하기</button>
+                        </div>
+                    </div>
+                </div>
             )}
 
             {/* Add/Edit Fertilizer Modal */}
