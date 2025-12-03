@@ -1,55 +1,34 @@
 
 import { Fertilizer, LogEntry, User, NotificationSettings, UserDataSummary } from './types';
 import { FERTILIZER_GUIDE } from './constants';
+import { initializeApp } from 'firebase/app';
+import { 
+    getFirestore, collection, doc, getDoc, setDoc, 
+    updateDoc, deleteDoc, getDocs, query, where 
+} from 'firebase/firestore';
 
-const DB_KEY = 'TURF_APP_DATABASE_V2'; // New key to force migration
-
-interface TurfDatabase {
-    users: User[];
-    fertilizers: { [username: string]: Fertilizer[] };
-    logs: { [username: string]: LogEntry[] };
-    settings: {
-        [username: string]: {
-            greenArea: string;
-            teeArea: string;
-            fairwayArea: string;
-            selectedGuide: string;
-            manualPlanMode?: boolean;
-            manualTargets?: { [area: string]: { N: number, P: number, K: number }[] };
-            fairwayGuideType?: 'KBG' | 'Zoysia';
-        }
-    };
-    notificationSettings: { [username: string]: NotificationSettings };
-}
-
-const simulateDelay = (ms: number) => new Promise(res => setTimeout(res, ms));
-
-const getDatabase = (): TurfDatabase => {
-    try {
-        const saved = localStorage.getItem(DB_KEY);
-        if (saved) {
-            return JSON.parse(saved);
-        }
-    } catch (e) {
-        console.error("Failed to load database, will reset.", e);
-    }
-    // Default empty state
-    return {
-        users: [],
-        fertilizers: {},
-        logs: {},
-        settings: {},
-        notificationSettings: {}
-    };
+// --- FIREBASE CONFIGURATION ---
+// TODO: Vercel 배포 시 환경 변수 또는 실제 키 값으로 교체해야 합니다.
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT_ID.appspot.com",
+  messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
+  appId: "YOUR_APP_ID"
 };
 
-const saveDatabase = (db: TurfDatabase) => {
-    try {
-        localStorage.setItem(DB_KEY, JSON.stringify(db));
-    } catch (e) {
-        console.error("Failed to save database.", e);
-    }
-};
+// Initialize Firebase
+// Note: In a real environment, wrap this in a try-catch or singleton pattern 
+// to prevent multiple initializations in some hot-reload environments.
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
+
+// Collection References
+const USERS_COLLECTION = 'users';
+const APP_DATA_COLLECTION = 'appData'; // Stores logs, fertilizers, settings per user
+
+// --- Helper Functions ---
 
 const initialFertilizers: Fertilizer[] = [
     { name: 'HPG-N16 (16-2-12)', usage: '그린', type: '완효성', N:16, P:2, K:12, Ca:2, Mg:1, S:4, Fe:0, Mn:0.5, Zn:0, Cu:0, B:0, Mo:0, Cl:0, Na:0, Si:0, Ni:0, Co:0, V:0, price:80000, unit:'20kg', rate:'15g/㎡', npkRatio:'8-1-6', stock: 40, imageUrl: 'https://via.placeholder.com/400x300/22c55e/ffffff?text=HPG-N16', lowStockAlertEnabled: false, description: '질소 함량이 높고 완효성 성분이 포함되어 있어 그린의 생육을 오랫동안 안정적으로 지속시켜줍니다. 생육기 전반에 사용하기 적합합니다.' },
@@ -58,205 +37,160 @@ const initialFertilizers: Fertilizer[] = [
     { name: '액상 영양제 (10-10-10)', usage: '그린', type: '액상', N:10, P:10, K:10, Ca:0, Mg:0, S:0, Fe:0, Mn:0, Zn:0, Cu:0, B:0, Mo:0, Cl:0, Na:0, Si:0, Ni:0, Co:0, V:0, price:70000, unit:'10L', rate:'2ml/㎡', density:1.1, concentration:10, npkRatio:'1-1-1', stock: 15, lowStockAlertEnabled: false, description: '빠른 흡수가 특징인 액상 비료로, 뿌리 기능이 저하되었거나 스트레스 시기에 즉각적인 영양 공급이 필요할 때 효과적입니다.' }
 ];
 
-const migrateUsage = (item: any) => {
-    const newItem = { ...item };
-    if (newItem.usage === '그린용') newItem.usage = '그린';
-    else if (newItem.usage === '티/페어웨이용') newItem.usage = '페어웨이';
-    return newItem;
-};
-
-const runMigration = () => {
-    const db = getDatabase();
-    
-    // Check if we need to migrate approval status for existing users
-    let needsSave = false;
-    db.users.forEach(user => {
-        if (user.isApproved === undefined) {
-            user.isApproved = true; // Auto-approve existing users during migration
-            needsSave = true;
-        }
-    });
-
-    if (db.users.length > 0 && !needsSave) return; // Already migrated or fresh install
-
-    console.log("Running one-time data migration...");
-
-    try {
-        // Migrate users
-        const oldUsersRaw = localStorage.getItem('turf_users');
-        const oldUsers = oldUsersRaw ? JSON.parse(oldUsersRaw) : [{ username: 'admin', password: 'admin', golfCourse: '관리자', isApproved: true }];
-        
-        // Merge old users if DB was empty, otherwise we just updated existing db above
-        if (db.users.length === 0) {
-            db.users = oldUsers.map((u: User) => ({...u, isApproved: u.isApproved ?? true}));
-        }
-
-        // Migrate data for each user
-        for (const user of oldUsers) {
-            const username = user.username;
-
-            // Fertilizers
-            const fertKey = `turf_fertilizers_${username}`;
-            const oldFertRaw = localStorage.getItem(fertKey);
-            if (oldFertRaw) {
-                db.fertilizers[username] = JSON.parse(oldFertRaw).map(migrateUsage);
-                localStorage.removeItem(fertKey);
-            } else if (username === 'admin') {
-                db.fertilizers.admin = initialFertilizers.map(migrateUsage);
-            }
-
-            // Logs
-            const logKey = `turf_log_${username}`;
-            const oldLogRaw = localStorage.getItem(logKey);
-            if (oldLogRaw) {
-                db.logs[username] = JSON.parse(oldLogRaw).map(migrateUsage);
-                localStorage.removeItem(logKey);
-            }
-
-            // Settings
-            const greenArea = localStorage.getItem(`turf_greenArea_${username}`) || '';
-            const teeArea = localStorage.getItem(`turf_teeArea_${username}`) || '';
-            const fairwayArea = localStorage.getItem(`turf_fairwayArea_${username}`) || localStorage.getItem(`turf_teeFairwayArea_${username}`) || '';
-            const selectedGuide = localStorage.getItem(`turf_selectedGuide_${username}`) || Object.keys(FERTILIZER_GUIDE)[0];
-            db.settings[username] = { greenArea, teeArea, fairwayArea, selectedGuide };
-            localStorage.removeItem(`turf_greenArea_${username}`);
-            localStorage.removeItem(`turf_teeArea_${username}`);
-            localStorage.removeItem(`turf_fairwayArea_${username}`);
-            localStorage.removeItem(`turf_teeFairwayArea_${username}`);
-            localStorage.removeItem(`turf_selectedGuide_${username}`);
-            
-            // Notification Settings
-            const notifKey = `turf_notifications_${username}`;
-            const oldNotifRaw = localStorage.getItem(notifKey);
-            if (oldNotifRaw) {
-                db.notificationSettings[username] = JSON.parse(oldNotifRaw);
-                localStorage.removeItem(notifKey);
-            }
-        }
-        
-        // Ensure admin user exists and is approved
-        if (!db.users.some(u => u.username === 'admin')) {
-            db.users.push({ username: 'admin', password: 'admin', golfCourse: '관리자', isApproved: true });
-        } else {
-             const admin = db.users.find(u => u.username === 'admin');
-             if (admin) admin.isApproved = true;
-        }
-        
-        if(!db.fertilizers.admin) {
-            db.fertilizers.admin = initialFertilizers.map(migrateUsage);
-        }
-
-        saveDatabase(db);
-        localStorage.removeItem('turf_users');
-        console.log("Migration complete.");
-    } catch (e) {
-        console.error("Migration failed:", e);
-    }
-};
-
-// Run migration once on startup
-runMigration();
-
 // --- User Management ---
+
 export const validateUser = async (username: string, password_provided: string): Promise<User | 'pending' | null> => {
-    await simulateDelay(50);
-    const db = getDatabase();
-    const user = db.users.find(u => u.username === username && u.password === password_provided);
-    if (user) {
-        if (!user.isApproved) {
-            return 'pending';
+    try {
+        const docRef = doc(db, USERS_COLLECTION, username);
+        const docSnap = await getDoc(docRef);
+
+        if (docSnap.exists()) {
+            const userData = docSnap.data() as User;
+            // Simple password check (Note: In production, use Firebase Auth)
+            if (userData.password === password_provided) {
+                if (!userData.isApproved) {
+                    return 'pending';
+                }
+                const { password, ...userWithoutPassword } = userData;
+                return userWithoutPassword;
+            }
         }
-        const { password, ...userWithoutPassword } = user;
-        return userWithoutPassword;
+        return null;
+    } catch (e) {
+        console.error("Login error:", e);
+        return null;
     }
-    return null;
 };
 
 export const createUser = async (username: string, password_provided: string, golfCourse: string): Promise<User | 'exists' | 'invalid'> => {
-    await simulateDelay(100);
     if (!username.trim() || !password_provided || !golfCourse.trim()) {
         return 'invalid';
     }
-    const db = getDatabase();
-    if (db.users.some(u => u.username === username)) {
-        return 'exists';
+    
+    try {
+        const docRef = doc(db, USERS_COLLECTION, username);
+        const docSnap = await getDoc(docRef);
+
+        if (docSnap.exists()) {
+            return 'exists';
+        }
+
+        const newUser: User = { username, password: password_provided, golfCourse, isApproved: false };
+        await setDoc(docRef, newUser);
+        
+        // Initialize App Data document for this user with empty structure
+        await setDoc(doc(db, APP_DATA_COLLECTION, username), {
+            logs: [],
+            fertilizers: [], // Will use global if empty, or user custom
+            settings: {},
+            notificationSettings: { enabled: false, email: '', threshold: 10 }
+        });
+
+        const { password, ...userWithoutPassword } = newUser;
+        return userWithoutPassword;
+    } catch (e) {
+        console.error("Create User Error:", e);
+        return 'invalid';
     }
-    // New users are NOT approved by default (except maybe the very first one if logic dictates, but we'll stick to secure default)
-    const newUser: User = { username, password: password_provided, golfCourse, isApproved: false };
-    db.users.push(newUser);
-    saveDatabase(db);
-    const { password, ...userWithoutPassword } = newUser;
-    return userWithoutPassword;
 };
 
 export const approveUser = async (username: string): Promise<void> => {
-    await simulateDelay(100);
-    const db = getDatabase();
-    const user = db.users.find(u => u.username === username);
-    if (user) {
-        user.isApproved = true;
-        saveDatabase(db);
+    try {
+        const docRef = doc(db, USERS_COLLECTION, username);
+        await updateDoc(docRef, { isApproved: true });
+    } catch (e) {
+        console.error("Approve User Error:", e);
     }
 };
 
 export const getUser = async (username: string): Promise<User | null> => {
-    await simulateDelay(50);
-    const db = getDatabase();
-    const user = db.users.find(u => u.username === username);
-    if (user) {
-        const { password, ...userWithoutPassword } = user;
-        return userWithoutPassword;
+    try {
+        const docRef = doc(db, USERS_COLLECTION, username);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+            const userData = docSnap.data() as User;
+            const { password, ...userWithoutPassword } = userData;
+            return userWithoutPassword;
+        }
+        return null;
+    } catch (e) {
+        console.error("Get User Error:", e);
+        return null;
     }
-    return null;
 };
 
 export const deleteUser = async (username: string): Promise<void> => {
-    await simulateDelay(100);
-    const db = getDatabase();
-    
-    // Remove user
-    db.users = db.users.filter(u => u.username !== username);
-    
-    // Remove associated data
-    if (db.fertilizers[username]) delete db.fertilizers[username];
-    if (db.logs[username]) delete db.logs[username];
-    if (db.settings[username]) delete db.settings[username];
-    if (db.notificationSettings[username]) delete db.notificationSettings[username];
-    
-    saveDatabase(db);
+    try {
+        // Delete User Profile
+        await deleteDoc(doc(db, USERS_COLLECTION, username));
+        // Delete User Data
+        await deleteDoc(doc(db, APP_DATA_COLLECTION, username));
+    } catch (e) {
+        console.error("Delete User Error:", e);
+    }
 };
 
-// --- Data Functions ---
+// --- Data Functions (Firestore Implementation) ---
+
+// Helper to get app data doc
+const getAppData = async (username: string) => {
+    const docRef = doc(db, APP_DATA_COLLECTION, username);
+    const docSnap = await getDoc(docRef);
+    if (docSnap.exists()) return docSnap.data();
+    return null;
+};
 
 export const getFertilizers = async (username: string): Promise<Fertilizer[]> => {
-    await simulateDelay(200);
-    const db = getDatabase();
-    const fertilizers = db.fertilizers[username] || [];
-    return fertilizers.map((item: any) => ({
-        ...item,
-        stock: item.stock ?? 0,
-        lowStockAlertEnabled: item.lowStockAlertEnabled ?? false,
-    }));
+    try {
+        const data = await getAppData(username);
+        let fertilizers = data?.fertilizers || [];
+
+        // If it's a regular user and they have no custom fertilizers, potentially return admin's (master) list
+        // However, the app logic seems to merge them in App.tsx. 
+        // Here we just return what is stored.
+        
+        // Special case: If requesting 'admin' and it's empty, return initial
+        if (username === 'admin' && fertilizers.length === 0) {
+            return initialFertilizers;
+        }
+
+        return fertilizers.map((item: any) => ({
+            ...item,
+            stock: item.stock ?? 0,
+            lowStockAlertEnabled: item.lowStockAlertEnabled ?? false,
+        }));
+    } catch (e) {
+        console.error("Get Fertilizers Error:", e);
+        return [];
+    }
 };
 
 export const saveFertilizers = async (username: string, fertilizers: Fertilizer[]): Promise<void> => {
-    await simulateDelay(100);
-    const db = getDatabase();
-    db.fertilizers[username] = fertilizers;
-    saveDatabase(db);
+    try {
+        const docRef = doc(db, APP_DATA_COLLECTION, username);
+        await setDoc(docRef, { fertilizers }, { merge: true });
+    } catch (e) {
+        console.error("Save Fertilizers Error:", e);
+    }
 };
 
 export const getLog = async (username: string): Promise<LogEntry[]> => {
-    await simulateDelay(200);
-    const db = getDatabase();
-    return db.logs[username] || [];
+    try {
+        const data = await getAppData(username);
+        return data?.logs || [];
+    } catch (e) {
+        console.error("Get Log Error:", e);
+        return [];
+    }
 };
 
 export const saveLog = async (username: string, log: LogEntry[]): Promise<void> => {
-    await simulateDelay(100);
-    const db = getDatabase();
-    db.logs[username] = log;
-    saveDatabase(db);
+    try {
+        const docRef = doc(db, APP_DATA_COLLECTION, username);
+        await setDoc(docRef, { logs: log }, { merge: true });
+    } catch (e) {
+        console.error("Save Log Error:", e);
+    }
 };
 
 export interface UserSettings {
@@ -270,33 +204,13 @@ export interface UserSettings {
 }
 
 export const getSettings = async (username: string): Promise<UserSettings> => {
-    await simulateDelay(150);
-    const db = getDatabase();
-    const userSettings = db.settings[username];
-    
     const defaultManualTargets = {
         '그린': Array(12).fill({ N: 0, P: 0, K: 0 }),
         '티': Array(12).fill({ N: 0, P: 0, K: 0 }),
         '페어웨이': Array(12).fill({ N: 0, P: 0, K: 0 }),
     };
-
-    if (userSettings) {
-        // Handle migration from array to object if old data exists
-        let manualTargets = userSettings.manualTargets;
-        if (Array.isArray(manualTargets)) {
-            manualTargets = {
-                '그린': manualTargets,
-                '티': [...defaultManualTargets['티']],
-                '페어웨이': [...defaultManualTargets['페어웨이']],
-            };
-        } else if (!manualTargets) {
-            manualTargets = defaultManualTargets;
-        }
-
-        return { ...userSettings, manualTargets };
-    }
-
-    return {
+    
+    const defaultSettings = {
         greenArea: '',
         teeArea: '',
         fairwayArea: '',
@@ -305,61 +219,108 @@ export const getSettings = async (username: string): Promise<UserSettings> => {
         manualTargets: defaultManualTargets,
         fairwayGuideType: 'KBG'
     };
+
+    try {
+        const data = await getAppData(username);
+        const userSettings = data?.settings;
+
+        if (userSettings) {
+             // Handle migration/defaults logic
+             let manualTargets = userSettings.manualTargets;
+             if (Array.isArray(manualTargets)) {
+                 manualTargets = {
+                     '그린': manualTargets,
+                     '티': [...defaultManualTargets['티']],
+                     '페어웨이': [...defaultManualTargets['페어웨이']],
+                 };
+             } else if (!manualTargets) {
+                 manualTargets = defaultManualTargets;
+             }
+             return { ...userSettings, manualTargets } as UserSettings;
+        }
+        
+        return defaultSettings as UserSettings;
+    } catch (e) {
+        console.error("Get Settings Error:", e);
+        return defaultSettings as UserSettings;
+    }
 };
 
 export const saveSettings = async (username: string, settings: UserSettings): Promise<void> => {
-    await simulateDelay(50);
-    const db = getDatabase();
-    db.settings[username] = settings;
-    saveDatabase(db);
+    try {
+        const docRef = doc(db, APP_DATA_COLLECTION, username);
+        await setDoc(docRef, { settings }, { merge: true });
+    } catch (e) {
+        console.error("Save Settings Error:", e);
+    }
 };
 
-
 export const getNotificationSettings = async (username: string): Promise<NotificationSettings> => {
-    await simulateDelay(100);
-    const db = getDatabase();
-    const settings = db.notificationSettings[username];
-    if (settings) {
-        return settings;
+    try {
+        const data = await getAppData(username);
+        if (data?.notificationSettings) {
+            return data.notificationSettings;
+        }
+        return { enabled: false, email: '', threshold: 10 };
+    } catch (e) {
+        console.error("Get Notification Settings Error:", e);
+         return { enabled: false, email: '', threshold: 10 };
     }
-    // Return default settings if none found
-    return { enabled: false, email: '', threshold: 10 };
 };
 
 export const saveNotificationSettings = async (username: string, settings: NotificationSettings): Promise<void> => {
-    await simulateDelay(100);
-    const db = getDatabase();
-    db.notificationSettings[username] = settings;
-    saveDatabase(db);
+    try {
+        const docRef = doc(db, APP_DATA_COLLECTION, username);
+        await setDoc(docRef, { notificationSettings: settings }, { merge: true });
+    } catch (e) {
+        console.error("Save Notification Settings Error:", e);
+    }
 };
 
 export const getAllUsersData = async (): Promise<UserDataSummary[]> => {
-    await simulateDelay(300);
-    const db = getDatabase();
-    const allData: UserDataSummary[] = [];
-
-    for (const user of db.users) {
-        if (user.username === 'admin') continue;
-
-        const logs = db.logs[user.username] || [];
-        const fertilizers = db.fertilizers[user.username] || []; // User-specific, but they don't have one, so it will be empty
-        const totalCost = logs.reduce((sum, entry) => sum + (entry.totalCost || 0), 0);
-        
-        let lastActivity: string | null = null;
-        if (logs.length > 0) {
-            lastActivity = [...logs].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].date;
-        }
-
-        allData.push({
-            username: user.username,
-            golfCourse: user.golfCourse || '미지정',
-            logCount: logs.length,
-            totalCost,
-            lastActivity,
-            logs: [...logs].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
-            fertilizers,
-            isApproved: user.isApproved ?? true, // Default to true if missing for display
+    try {
+        // 1. Get all users
+        const usersSnapshot = await getDocs(collection(db, USERS_COLLECTION));
+        const users: User[] = [];
+        usersSnapshot.forEach(doc => {
+            users.push(doc.data() as User);
         });
+
+        const allData: UserDataSummary[] = [];
+
+        // 2. Iterate and get AppData for each
+        // Optimization: In a real large app, this N+1 query pattern is bad. 
+        // Better to have a separate 'stats' collection or use a collection group query if data structure permits.
+        // For this scale, it's acceptable.
+        
+        for (const user of users) {
+            if (user.username === 'admin') continue;
+
+            const appData = await getAppData(user.username);
+            const logs = appData?.logs || [];
+            const fertilizers = appData?.fertilizers || [];
+            
+            const totalCost = logs.reduce((sum: number, entry: LogEntry) => sum + (entry.totalCost || 0), 0);
+            
+            let lastActivity: string | null = null;
+            if (logs.length > 0) {
+                lastActivity = [...logs].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].date;
+            }
+
+            allData.push({
+                username: user.username,
+                golfCourse: user.golfCourse || '미지정',
+                logCount: logs.length,
+                totalCost,
+                lastActivity,
+                logs: [...logs].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+                fertilizers,
+                isApproved: user.isApproved ?? true,
+            });
+        }
+        return allData;
+    } catch (e) {
+        console.error("Get All Users Data Error:", e);
+        return [];
     }
-    return allData;
 };
