@@ -315,7 +315,7 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose, on
                                                 <YAxis fontSize={12} />
                                                 <Tooltip 
                                                     formatter={(val: number) => `${Math.round(val).toLocaleString()}원`} 
-                                                    labelFormatter={(label) => label}
+                                                    labelFormatter={(label: any) => String(label)}
                                                 />
                                                 <Bar dataKey="cost" name="비용" fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={50} />
                                             </BarChart>
@@ -658,7 +658,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
     const handleBulkApprove = async () => {
         if (selectedPendingUsers.size === 0) return;
         if (window.confirm(`선택한 ${selectedPendingUsers.size}명의 사용자를 일괄 승인하시겠습니까?`)) {
-            for (const username of Array.from(selectedPendingUsers)) {
+            const users = Array.from(selectedPendingUsers) as string[];
+            for (const username of users) {
                 await api.approveUser(username);
             }
             setSelectedPendingUsers(new Set());
@@ -669,7 +670,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
     const handleBulkReject = async () => {
         if (selectedPendingUsers.size === 0) return;
         if (window.confirm(`선택한 ${selectedPendingUsers.size}명의 사용자를 일괄 거절(삭제)하시겠습니까?`)) {
-            for (const username of Array.from(selectedPendingUsers)) {
+            const users = Array.from(selectedPendingUsers) as string[];
+            for (const username of users) {
                 await api.deleteUser(username);
             }
             setSelectedPendingUsers(new Set());
@@ -833,7 +835,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             }
             // Clean up code blocks if present
             text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-            const data = JSON.parse(text);
+            const data: any = JSON.parse(text);
 
             if (Array.isArray(data)) {
                 // Handle Bulk Import List
