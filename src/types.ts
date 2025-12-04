@@ -57,6 +57,7 @@ export interface LogEntry {
     P?: number;
     K?: number;
   };
+  topdressing?: number; // Added: Depth in mm
 }
 
 export interface ChatMessage {

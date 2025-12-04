@@ -32,6 +32,10 @@ const exportUserLogsToExcel = (userData: UserDataSummary) => {
             '총 비용(원)': Math.round(log.totalCost),
         };
         
+        if (log.topdressing) {
+            row['배토(mm)'] = log.topdressing;
+        }
+
         // Add nutrients
         const NUTRIENTS = ['N','P','K','Ca','Mg','S','Fe','Mn','Zn','Cu','B','Mo','Cl','Na','Si','Ni','Co','V'];
         NUTRIENTS.forEach(n => {
@@ -54,30 +58,39 @@ const exportUserLogsToExcel = (userData: UserDataSummary) => {
     XLSX.writeFile(workbook, `${userData.username}_${userData.golfCourse}_시비일지.xlsx`);
 };
 
-// --- User Detail Modal for Analytics ---
+// --- User Detail Modal for Analytics and Management ---
 interface UserDetailModalProps {
     userData: UserDataSummary;
     onClose: () => void;
+    onDataUpdate: () => void; // Callback to refresh parent data
 }
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
 
-const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose }) => {
+const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose, onDataUpdate }) => {
+    const [activeTab, setActiveTab] = useState<'analytics' | 'logs'>('analytics');
     const [statsView, setStatsView] = useState<'monthly' | 'daily' | 'yearly'>('monthly');
     const [selectedYear, setSelectedYear] = useState<string>('all');
+    
+    // Log Management State
+    const [logs, setLogs] = useState<LogEntry[]>(userData.logs || []);
+    const [editingLogId, setEditingLogId] = useState<string | null>(null);
+    const [editFormData, setEditFormData] = useState<Partial<LogEntry>>({});
 
-    // 1. Calculate Product Statistics (Most used, Cost share, Quantity)
+    useEffect(() => {
+        setLogs(userData.logs || []);
+    }, [userData]);
+
+    // 1. Calculate Product Statistics
     const productStats = useMemo(() => {
         const stats: Record<string, { count: number, totalCost: number, totalAmount: number, unitHint: string, name: string }> = {};
-        userData.logs.forEach(log => {
+        logs.forEach(log => {
             if (!stats[log.product]) {
                 stats[log.product] = { count: 0, totalCost: 0, totalAmount: 0, unitHint: '', name: log.product };
             }
             stats[log.product].count += 1;
             stats[log.product].totalCost += log.totalCost;
             
-            // Estimate amount (kg or L) based on area * rate / 1000
-            // This assumes rate is g/m2 or ml/m2
             const amount = (log.area * log.applicationRate) / 1000;
             stats[log.product].totalAmount += amount;
             
@@ -86,7 +99,7 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose }) 
             }
         });
         return Object.values(stats).sort((a, b) => b.totalCost - a.totalCost);
-    }, [userData.logs]);
+    }, [logs]);
 
     const mostFrequentProduct = useMemo(() => {
         if (productStats.length === 0) return null;
@@ -103,34 +116,32 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose }) 
         const yearly: Record<string, number> = {};
         const daily: Record<string, number> = {};
 
-        userData.logs.forEach(log => {
-            // Apply Year Filter if selected
+        logs.forEach(log => {
             const date = new Date(log.date);
             const y = date.getFullYear().toString();
             
             if (selectedYear !== 'all' && y !== selectedYear) return;
 
             const m = `${y}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-            const d = log.date; // YYYY-MM-DD
+            const d = log.date; 
 
             yearly[y] = (yearly[y] || 0) + log.totalCost;
             monthly[m] = (monthly[m] || 0) + log.totalCost;
             daily[d] = (daily[d] || 0) + log.totalCost;
         });
 
-        // Convert to arrays for charts/tables
         const monthlyArr = Object.entries(monthly).map(([k, v]) => ({ period: k, cost: v })).sort((a, b) => a.period.localeCompare(b.period));
         const yearlyArr = Object.entries(yearly).map(([k, v]) => ({ period: k, cost: v })).sort((a, b) => a.period.localeCompare(b.period));
-        const dailyArr = Object.entries(daily).map(([k, v]) => ({ period: k, cost: v })).sort((a, b) => a.period.localeCompare(b.period)); // Sort daily ascending for chart
+        const dailyArr = Object.entries(daily).map(([k, v]) => ({ period: k, cost: v })).sort((a, b) => a.period.localeCompare(b.period));
 
         return { monthly: monthlyArr, yearly: yearlyArr, daily: dailyArr };
-    }, [userData.logs, selectedYear]);
+    }, [logs, selectedYear]);
 
-    // 3. Annual Usage Stats (New Feature for Growth Pattern)
+    // 3. Annual Usage Stats
     const annualUsageStats = useMemo(() => {
         const stats: Record<string, { totalAmount: number, unit: string, cost: number, count: number }> = {};
         
-        userData.logs.forEach(log => {
+        logs.forEach(log => {
             const date = new Date(log.date);
             const y = date.getFullYear().toString();
             
@@ -150,17 +161,58 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose }) 
         return Object.entries(stats)
             .map(([name, data]) => ({ name, ...data }))
             .sort((a, b) => b.totalAmount - a.totalAmount);
-    }, [userData.logs, selectedYear]);
+    }, [logs, selectedYear]);
 
     const availableYears = useMemo(() => {
-        const years = new Set(userData.logs.map(l => new Date(l.date).getFullYear().toString()));
+        const years = new Set(logs.map(l => new Date(l.date).getFullYear().toString()));
         return Array.from(years).sort().reverse();
-    }, [userData.logs]);
+    }, [logs]);
 
     const formatXAxis = (tickItem: string) => {
-        if (statsView === 'monthly') return tickItem.slice(5); // 2023-05 -> 05
-        if (statsView === 'daily') return tickItem.slice(5); // 2023-05-20 -> 05-20
-        return tickItem; // 2023
+        if (statsView === 'monthly') return tickItem.slice(5); 
+        if (statsView === 'daily') return tickItem.slice(5); 
+        return tickItem; 
+    };
+
+    // --- Log Management Functions ---
+
+    const handleDeleteLog = async (logId: string) => {
+        if(window.confirm('이 시비 기록을 정말 삭제하시겠습니까?')) {
+            const updatedLogs = logs.filter(l => l.id !== logId);
+            setLogs(updatedLogs);
+            await api.saveLog(userData.username, updatedLogs);
+            onDataUpdate(); // Refresh parent
+        }
+    };
+
+    const startEditingLog = (log: LogEntry) => {
+        setEditingLogId(log.id);
+        setEditFormData({ ...log });
+    };
+
+    const cancelEditing = () => {
+        setEditingLogId(null);
+        setEditFormData({});
+    };
+
+    const saveEditedLog = async () => {
+        if (!editingLogId) return;
+        
+        const updatedLogs = logs.map(l => {
+            if (l.id === editingLogId) {
+                // Simple merge. Note: complex recalculations (nutrients/cost) are skipped here 
+                // assuming admin edits just correct values or user needs to re-enter if logic is complex.
+                // For a robust app, we should recalculate cost if rate/area changes.
+                return { ...l, ...editFormData } as LogEntry;
+            }
+            return l;
+        });
+        
+        setLogs(updatedLogs);
+        await api.saveLog(userData.username, updatedLogs);
+        setEditingLogId(null);
+        setEditFormData({});
+        onDataUpdate();
     };
 
     return (
@@ -170,14 +222,14 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose }) 
                 <div className="p-5 border-b flex justify-between items-center bg-slate-50">
                     <div>
                         <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                            <span className="bg-blue-600 text-white text-xs px-2 py-1 rounded-full">사용자 상세 분석</span>
+                            <span className="bg-blue-600 text-white text-xs px-2 py-1 rounded-full">사용자 관리</span>
                             {userData.username} ({userData.golfCourse})
                         </h2>
-                        <p className="text-slate-500 text-sm mt-1">총 기록: {userData.logCount}건 | 가입일: {userData.isApproved ? '승인됨' : '대기중'}</p>
+                        <p className="text-slate-500 text-sm mt-1">총 기록: {logs.length}건 | 가입일: {userData.isApproved ? '승인됨' : '대기중'}</p>
                     </div>
                     <div className="flex gap-2">
                         <button 
-                            onClick={() => exportUserLogsToExcel(userData)}
+                            onClick={() => exportUserLogsToExcel({ ...userData, logs })}
                             className="flex items-center gap-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded shadow transition-colors"
                         >
                             <DownloadIcon className="w-4 h-4" /> 엑셀 저장
@@ -186,138 +238,246 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose }) 
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                    {/* Summary Cards */}
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
-                            <h4 className="text-blue-800 text-xs font-bold uppercase mb-1">총 누적 비용</h4>
-                            <p className="text-2xl font-bold text-blue-900">{Math.round(userData.totalCost).toLocaleString()}원</p>
-                        </div>
-                        <div className="bg-green-50 p-4 rounded-lg border border-green-100">
-                            <h4 className="text-green-800 text-xs font-bold uppercase mb-1">최다 사용 (빈도)</h4>
-                            <p className="text-lg font-bold text-green-900 truncate" title={mostFrequentProduct?.name}>{mostFrequentProduct ? mostFrequentProduct.name : '-'}</p>
-                            <p className="text-xs text-green-700">{mostFrequentProduct ? `${mostFrequentProduct.count}회 사용` : ''}</p>
-                        </div>
-                        <div className="bg-orange-50 p-4 rounded-lg border border-orange-100">
-                            <h4 className="text-orange-800 text-xs font-bold uppercase mb-1">최고 지출 비료</h4>
-                            <p className="text-lg font-bold text-orange-900 truncate" title={productStats[0]?.name}>{productStats[0] ? productStats[0].name : '-'}</p>
-                            <p className="text-xs text-orange-700">{productStats[0] ? `${Math.round(productStats[0].totalCost).toLocaleString()}원` : ''}</p>
-                        </div>
-                         <div className="bg-purple-50 p-4 rounded-lg border border-purple-100">
-                            <h4 className="text-purple-800 text-xs font-bold uppercase mb-1">사용 제품 수</h4>
-                            <p className="text-2xl font-bold text-purple-900">{productStats.length}종</p>
-                        </div>
-                    </div>
+                {/* Tabs */}
+                <div className="flex border-b bg-white">
+                    <button 
+                        className={`flex-1 py-3 text-sm font-bold ${activeTab === 'analytics' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-500 hover:bg-slate-50'}`}
+                        onClick={() => setActiveTab('analytics')}
+                    >
+                        📊 데이터 분석
+                    </button>
+                    <button 
+                        className={`flex-1 py-3 text-sm font-bold ${activeTab === 'logs' ? 'text-purple-600 border-b-2 border-purple-600' : 'text-slate-500 hover:bg-slate-50'}`}
+                        onClick={() => setActiveTab('logs')}
+                    >
+                        📝 일지 관리 (수정/삭제)
+                    </button>
+                </div>
 
-                    {/* Charts Row */}
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                        {/* Cost Chart */}
-                        <div className="bg-white p-4 rounded-lg border shadow-sm flex flex-col">
-                            <div className="flex justify-between items-center mb-4">
-                                <h3 className="font-bold text-slate-700">📊 기간별 비용 추이</h3>
-                                <div className="flex gap-2">
-                                    <select 
-                                        value={selectedYear} 
-                                        onChange={(e) => setSelectedYear(e.target.value)}
-                                        className="text-xs p-1 border rounded bg-slate-50"
-                                    >
-                                        <option value="all">전체 연도</option>
-                                        {availableYears.map(y => <option key={y} value={y}>{y}년</option>)}
-                                    </select>
-                                    <div className="flex bg-slate-100 rounded p-1">
-                                        {(['daily', 'monthly', 'yearly'] as const).map(view => (
-                                            <button
-                                                key={view}
-                                                onClick={() => setStatsView(view)}
-                                                className={`px-3 py-1 text-xs font-bold rounded transition-colors ${statsView === view ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                    {activeTab === 'analytics' ? (
+                        <>
+                            {/* Summary Cards */}
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
+                                    <h4 className="text-blue-800 text-xs font-bold uppercase mb-1">총 누적 비용</h4>
+                                    <p className="text-2xl font-bold text-blue-900">{Math.round(userData.totalCost).toLocaleString()}원</p>
+                                </div>
+                                <div className="bg-green-50 p-4 rounded-lg border border-green-100">
+                                    <h4 className="text-green-800 text-xs font-bold uppercase mb-1">최다 사용 (빈도)</h4>
+                                    <p className="text-lg font-bold text-green-900 truncate" title={mostFrequentProduct?.name}>{mostFrequentProduct ? mostFrequentProduct.name : '-'}</p>
+                                    <p className="text-xs text-green-700">{mostFrequentProduct ? `${mostFrequentProduct.count}회 사용` : ''}</p>
+                                </div>
+                                <div className="bg-orange-50 p-4 rounded-lg border border-orange-100">
+                                    <h4 className="text-orange-800 text-xs font-bold uppercase mb-1">최고 지출 비료</h4>
+                                    <p className="text-lg font-bold text-orange-900 truncate" title={productStats[0]?.name}>{productStats[0] ? productStats[0].name : '-'}</p>
+                                    <p className="text-xs text-orange-700">{productStats[0] ? `${Math.round(productStats[0].totalCost).toLocaleString()}원` : ''}</p>
+                                </div>
+                                <div className="bg-purple-50 p-4 rounded-lg border border-purple-100">
+                                    <h4 className="text-purple-800 text-xs font-bold uppercase mb-1">사용 제품 수</h4>
+                                    <p className="text-2xl font-bold text-purple-900">{productStats.length}종</p>
+                                </div>
+                            </div>
+
+                            {/* Charts Row */}
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                {/* Cost Chart */}
+                                <div className="bg-white p-4 rounded-lg border shadow-sm flex flex-col">
+                                    <div className="flex justify-between items-center mb-4">
+                                        <h3 className="font-bold text-slate-700">📊 기간별 비용 추이</h3>
+                                        <div className="flex gap-2">
+                                            <select 
+                                                value={selectedYear} 
+                                                onChange={(e) => setSelectedYear(e.target.value)}
+                                                className="text-xs p-1 border rounded bg-slate-50"
                                             >
-                                                {view === 'daily' ? '일별' : view === 'monthly' ? '월별' : '연간'}
-                                            </button>
-                                        ))}
+                                                <option value="all">전체 연도</option>
+                                                {availableYears.map(y => <option key={y} value={y}>{y}년</option>)}
+                                            </select>
+                                            <div className="flex bg-slate-100 rounded p-1">
+                                                {(['daily', 'monthly', 'yearly'] as const).map(view => (
+                                                    <button
+                                                        key={view}
+                                                        onClick={() => setStatsView(view)}
+                                                        className={`px-3 py-1 text-xs font-bold rounded transition-colors ${statsView === view ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                                    >
+                                                        {view === 'daily' ? '일별' : view === 'monthly' ? '월별' : '연간'}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="h-64">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <BarChart data={timeStats[statsView]}>
+                                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                                <XAxis dataKey="period" fontSize={12} tickFormatter={formatXAxis} />
+                                                <YAxis fontSize={12} />
+                                                <Tooltip 
+                                                    formatter={(val: number) => `${Math.round(val).toLocaleString()}원`} 
+                                                    labelFormatter={(label) => label}
+                                                />
+                                                <Bar dataKey="cost" name="비용" fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={50} />
+                                            </BarChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                </div>
+
+                                {/* Product Cost Distribution */}
+                                <div className="bg-white p-4 rounded-lg border shadow-sm">
+                                    <h3 className="font-bold text-slate-700 mb-4">🍰 제품별 비용 점유율 (Top 5)</h3>
+                                    <div className="h-64 flex items-center justify-center">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <PieChart>
+                                                <Pie
+                                                    data={chartDataProductCost}
+                                                    cx="50%"
+                                                    cy="50%"
+                                                    innerRadius={40}
+                                                    outerRadius={80}
+                                                    fill="#8884d8"
+                                                    paddingAngle={5}
+                                                    dataKey="value"
+                                                >
+                                                    {chartDataProductCost.map((entry, index) => (
+                                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                                    ))}
+                                                </Pie>
+                                                <Tooltip formatter={(val: number) => `${Math.round(val).toLocaleString()}원`} />
+                                                <Legend wrapperStyle={{fontSize: '11px'}} />
+                                            </PieChart>
+                                        </ResponsiveContainer>
                                     </div>
                                 </div>
                             </div>
-                            <div className="h-64">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <BarChart data={timeStats[statsView]}>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                        <XAxis dataKey="period" fontSize={12} tickFormatter={formatXAxis} />
-                                        <YAxis fontSize={12} />
-                                        <Tooltip 
-                                            formatter={(val: number) => `${Math.round(val).toLocaleString()}원`} 
-                                            labelFormatter={(label) => label}
-                                        />
-                                        <Bar dataKey="cost" name="비용" fill="#3b82f6" radius={[4, 4, 0, 0]} maxBarSize={50} />
-                                    </BarChart>
-                                </ResponsiveContainer>
-                            </div>
-                        </div>
 
-                        {/* Product Cost Distribution */}
-                        <div className="bg-white p-4 rounded-lg border shadow-sm">
-                            <h3 className="font-bold text-slate-700 mb-4">🍰 제품별 비용 점유율 (Top 5)</h3>
-                            <div className="h-64 flex items-center justify-center">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <PieChart>
-                                        <Pie
-                                            data={chartDataProductCost}
-                                            cx="50%"
-                                            cy="50%"
-                                            innerRadius={40}
-                                            outerRadius={80}
-                                            fill="#8884d8"
-                                            paddingAngle={5}
-                                            dataKey="value"
-                                        >
-                                            {chartDataProductCost.map((entry, index) => (
-                                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                            ))}
-                                        </Pie>
-                                        <Tooltip formatter={(val: number) => `${Math.round(val).toLocaleString()}원`} />
-                                        <Legend wrapperStyle={{fontSize: '11px'}} />
-                                    </PieChart>
-                                </ResponsiveContainer>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* NEW SECTION: Annual Total Fertilizer Usage */}
-                    <div className="bg-white border rounded-lg overflow-hidden">
-                        <div className="p-4 bg-slate-50 border-b flex justify-between items-center">
-                            <h3 className="font-bold text-slate-700">📅 연간 비료 총 사용량 및 생육 자재 투입 현황</h3>
-                            <span className="text-xs text-slate-500 bg-white px-2 py-1 rounded border">
-                                {selectedYear === 'all' ? '전체 기간' : `${selectedYear}년도 데이터`}
-                            </span>
-                        </div>
-                        <div className="max-h-80 overflow-y-auto">
-                            <table className="w-full text-sm text-left">
-                                <thead className="bg-slate-100 text-slate-600 sticky top-0 z-10">
-                                    <tr>
-                                        <th className="p-3">제품명</th>
-                                        <th className="p-3 text-right">총 사용량 (kg/L)</th>
-                                        <th className="p-3 text-right">사용 횟수</th>
-                                        <th className="p-3 text-right">총 비용</th>
-                                    </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                    {annualUsageStats.length > 0 ? (
-                                        annualUsageStats.map((item, idx) => (
-                                            <tr key={idx} className="hover:bg-slate-50">
-                                                <td className="p-3 text-slate-700 font-medium">{item.name}</td>
-                                                <td className="p-3 text-right font-bold text-blue-800">
-                                                    {item.totalAmount.toFixed(1)} <span className="text-xs font-normal text-slate-500">{item.unit}</span>
-                                                </td>
-                                                <td className="p-3 text-right text-slate-600">{item.count}회</td>
-                                                <td className="p-3 text-right font-mono text-slate-800">{Math.round(item.cost).toLocaleString()}원</td>
+                            {/* Annual Usage Table */}
+                            <div className="bg-white border rounded-lg overflow-hidden">
+                                <div className="p-4 bg-slate-50 border-b flex justify-between items-center">
+                                    <h3 className="font-bold text-slate-700">📅 연간 비료 총 사용량 현황</h3>
+                                    <span className="text-xs text-slate-500 bg-white px-2 py-1 rounded border">
+                                        {selectedYear === 'all' ? '전체 기간' : `${selectedYear}년도 데이터`}
+                                    </span>
+                                </div>
+                                <div className="max-h-80 overflow-y-auto">
+                                    <table className="w-full text-sm text-left">
+                                        <thead className="bg-slate-100 text-slate-600 sticky top-0 z-10">
+                                            <tr>
+                                                <th className="p-3">제품명</th>
+                                                <th className="p-3 text-right">총 사용량 (kg/L)</th>
+                                                <th className="p-3 text-right">사용 횟수</th>
+                                                <th className="p-3 text-right">총 비용</th>
                                             </tr>
-                                        ))
-                                    ) : (
-                                        <tr><td colSpan={4} className="p-6 text-center text-slate-400">해당 연도의 데이터가 없습니다.</td></tr>
-                                    )}
-                                </tbody>
-                            </table>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {annualUsageStats.length > 0 ? (
+                                                annualUsageStats.map((item, idx) => (
+                                                    <tr key={idx} className="hover:bg-slate-50">
+                                                        <td className="p-3 text-slate-700 font-medium">{item.name}</td>
+                                                        <td className="p-3 text-right font-bold text-blue-800">
+                                                            {item.totalAmount.toFixed(1)} <span className="text-xs font-normal text-slate-500">{item.unit}</span>
+                                                        </td>
+                                                        <td className="p-3 text-right text-slate-600">{item.count}회</td>
+                                                        <td className="p-3 text-right font-mono text-slate-800">{Math.round(item.cost).toLocaleString()}원</td>
+                                                    </tr>
+                                                ))
+                                            ) : (
+                                                <tr><td colSpan={4} className="p-6 text-center text-slate-400">해당 연도의 데이터가 없습니다.</td></tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </>
+                    ) : (
+                        // --- Logs Management Tab ---
+                        <div className="bg-white rounded-lg border shadow-sm overflow-hidden">
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-slate-100 text-slate-700 uppercase font-bold sticky top-0">
+                                        <tr>
+                                            <th className="p-3 border-b">날짜</th>
+                                            <th className="p-3 border-b">구분</th>
+                                            <th className="p-3 border-b">제품명</th>
+                                            <th className="p-3 border-b text-right">면적(㎡)</th>
+                                            <th className="p-3 border-b text-right">사용량</th>
+                                            <th className="p-3 border-b text-right">비용</th>
+                                            <th className="p-3 border-b text-center">관리</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {logs.map((log) => (
+                                            <tr key={log.id} className="hover:bg-slate-50">
+                                                {editingLogId === log.id ? (
+                                                    <>
+                                                        <td className="p-2">
+                                                            <input type="date" className="border p-1 rounded w-full" value={editFormData.date} onChange={e => setEditFormData({...editFormData, date: e.target.value})} />
+                                                        </td>
+                                                        <td className="p-2">
+                                                            <select className="border p-1 rounded w-full" value={editFormData.usage} onChange={e => setEditFormData({...editFormData, usage: e.target.value as any})}>
+                                                                <option value="그린">그린</option>
+                                                                <option value="티">티</option>
+                                                                <option value="페어웨이">페어웨이</option>
+                                                            </select>
+                                                        </td>
+                                                        <td className="p-2">
+                                                            <input type="text" className="border p-1 rounded w-full" value={editFormData.product} onChange={e => setEditFormData({...editFormData, product: e.target.value})} />
+                                                        </td>
+                                                        <td className="p-2">
+                                                            <input type="number" className="border p-1 rounded w-full text-right" value={editFormData.area} onChange={e => setEditFormData({...editFormData, area: Number(e.target.value)})} />
+                                                        </td>
+                                                        <td className="p-2">
+                                                            <div className="flex gap-1">
+                                                                <input type="number" className="border p-1 rounded w-20 text-right" value={editFormData.applicationRate} onChange={e => setEditFormData({...editFormData, applicationRate: Number(e.target.value)})} />
+                                                                <span className="text-xs self-center">{log.applicationUnit}</span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="p-2 text-right">
+                                                            <input type="number" className="border p-1 rounded w-full text-right" value={editFormData.totalCost} onChange={e => setEditFormData({...editFormData, totalCost: Number(e.target.value)})} />
+                                                        </td>
+                                                        <td className="p-2 text-center">
+                                                            <div className="flex justify-center gap-1">
+                                                                <button onClick={saveEditedLog} className="bg-green-600 text-white px-2 py-1 rounded text-xs">저장</button>
+                                                                <button onClick={cancelEditing} className="bg-slate-400 text-white px-2 py-1 rounded text-xs">취소</button>
+                                                            </div>
+                                                        </td>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <td className="p-3">{log.date}</td>
+                                                        <td className="p-3">
+                                                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+                                                                log.usage === '그린' ? 'bg-green-100 text-green-800' :
+                                                                log.usage === '티' ? 'bg-blue-100 text-blue-800' :
+                                                                'bg-orange-100 text-orange-800'
+                                                            }`}>{log.usage}</span>
+                                                        </td>
+                                                        <td className="p-3 font-medium">{log.product}</td>
+                                                        <td className="p-3 text-right">{log.area}</td>
+                                                        <td className="p-3 text-right">{log.applicationRate}{log.applicationUnit}</td>
+                                                        <td className="p-3 text-right font-mono">{Math.round(log.totalCost).toLocaleString()}</td>
+                                                        <td className="p-3 text-center">
+                                                            <div className="flex justify-center gap-2">
+                                                                <button onClick={() => startEditingLog(log)} className="text-blue-500 hover:text-blue-700 p-1" title="수정">
+                                                                    <PencilIcon className="w-4 h-4" />
+                                                                </button>
+                                                                <button onClick={() => handleDeleteLog(log.id)} className="text-red-400 hover:text-red-600 p-1" title="삭제">
+                                                                    <TrashIcon className="w-4 h-4" />
+                                                                </button>
+                                                            </div>
+                                                        </td>
+                                                    </>
+                                                )}
+                                            </tr>
+                                        ))}
+                                        {logs.length === 0 && (
+                                            <tr><td colSpan={7} className="p-8 text-center text-slate-400">기록된 일지가 없습니다.</td></tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
                         </div>
-                    </div>
+                    )}
                 </div>
             </div>
         </div>
@@ -673,11 +833,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             }
             // Clean up code blocks if present
             text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-            const data: any = JSON.parse(text);
+            const data = JSON.parse(text);
 
             if (Array.isArray(data)) {
                 // Handle Bulk Import List
-                const validList: Fertilizer[] = data.map((item: any) => ({
+                const validList: Fertilizer[] = data.map(item => ({
                      name: item.name || 'Unknown Product',
                      usage: ['그린', '티', '페어웨이'].includes(item.usage) ? item.usage : '그린',
                      type: item.type || '기타',
@@ -720,10 +880,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 }
             }
             
-        } catch (e: any) {
+        } catch (e) {
             console.error("AI Fill Error:", e);
-            const errorMessage = e instanceof Error ? e.message : "분석에 실패했습니다. 올바른 데이터인지 확인해주세요.";
-            setAiError(errorMessage);
+            setAiError("분석에 실패했습니다. 올바른 데이터인지 확인해주세요.");
         } finally {
             setIsAiFillLoading(false);
         }
@@ -1051,6 +1210,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 <UserDetailModal 
                     userData={selectedUserForDetail} 
                     onClose={() => setSelectedUserForDetail(null)} 
+                    onDataUpdate={loadData}
                 />
             )}
 
