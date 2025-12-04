@@ -658,7 +658,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
     const handleBulkApprove = async () => {
         if (selectedPendingUsers.size === 0) return;
         if (window.confirm(`선택한 ${selectedPendingUsers.size}명의 사용자를 일괄 승인하시겠습니까?`)) {
-            for (const username of Array.from(selectedPendingUsers)) {
+            const users = Array.from(selectedPendingUsers) as string[];
+            for (const username of users) {
                 await api.approveUser(username);
             }
             setSelectedPendingUsers(new Set());
@@ -669,7 +670,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
     const handleBulkReject = async () => {
         if (selectedPendingUsers.size === 0) return;
         if (window.confirm(`선택한 ${selectedPendingUsers.size}명의 사용자를 일괄 거절(삭제)하시겠습니까?`)) {
-            for (const username of Array.from(selectedPendingUsers)) {
+            const users = Array.from(selectedPendingUsers) as string[];
+            for (const username of users) {
                 await api.deleteUser(username);
             }
             setSelectedPendingUsers(new Set());
@@ -837,7 +839,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
 
             if (Array.isArray(data)) {
                 // Handle Bulk Import List
-                const validList: Fertilizer[] = data.map(item => ({
+                const validList: Fertilizer[] = data.map((item: any) => ({
                      name: item.name || 'Unknown Product',
                      usage: ['그린', '티', '페어웨이'].includes(item.usage) ? item.usage : '그린',
                      type: item.type || '기타',
@@ -880,9 +882,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 }
             }
             
-        } catch (e) {
+        } catch (e: any) {
             console.error("AI Fill Error:", e);
-            setAiError("분석에 실패했습니다. 올바른 데이터인지 확인해주세요.");
+            const errorMessage = e instanceof Error ? e.message : "분석에 실패했습니다. 올바른 데이터인지 확인해주세요.";
+            setAiError(errorMessage);
         } finally {
             setIsAiFillLoading(false);
         }
