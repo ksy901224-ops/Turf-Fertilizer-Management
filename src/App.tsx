@@ -1527,4 +1527,1051 @@ export default function TurfFertilizerApp() {
                                     <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded border border-amber-200">참고: 한국잔디연구소 표준 시비량 응용</span>
                                 </div>
                                 <div className="flex border-b border-amber-200 mb-3 flex-wrap">
-                                    {Object.keys(FERTILIZER_GUIDE).map(grassType
+                                    {Object.keys(FERTILIZER_GUIDE).map(grassType => (
+                                        <button key={grassType} onClick={() => setSelectedGuide(grassType)} className={`px-3 py-2 text-sm sm:text-base font-semibold transition-colors -mb-px border-b-2 ${ selectedGuide === grassType ? 'text-amber-800 border-amber-600' : 'text-amber-600 border-transparent hover:border-amber-400' }`}>
+                                            {grassType}
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className="grid grid-cols-3 gap-x-4 gap-y-2 text-center mb-4">
+                                   {Object.entries(FERTILIZER_GUIDE[selectedGuide]).map(([nutrient, amount]) => (
+                                        <div key={nutrient} className="text-sm">
+                                            <div className="font-bold text-slate-700 text-base">{nutrient}</div>
+                                            <div className="mt-1 font-mono bg-slate-200 px-2 py-0.5 rounded text-slate-800">{amount}g</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="bg-white border rounded-lg overflow-hidden shadow-sm">
+                                <div className="p-4 bg-slate-50 border-b flex justify-between items-center">
+                                    <h3 className="font-semibold text-slate-700">📅 월별 표준 시비 스케줄 (g/㎡)</h3>
+                                    <div className="text-xs flex gap-3">
+                                        <span className="flex items-center gap-1"><span className="w-3 h-3 bg-green-500 rounded-sm"></span> 질소(N)</span>
+                                        <span className="flex items-center gap-1"><span className="w-3 h-3 bg-blue-500 rounded-sm"></span> 인산(P)</span>
+                                        <span className="flex items-center gap-1"><span className="w-3 h-3 bg-orange-500 rounded-sm"></span> 칼륨(K)</span>
+                                    </div>
+                                </div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-sm text-center border-collapse">
+                                        <thead>
+                                            <tr className="bg-slate-100 text-slate-700 text-xs uppercase">
+                                                <th className="p-2 border-r border-b w-16">월</th>
+                                                <th className="p-2 border-b w-1/3">질소 (N)</th>
+                                                <th className="p-2 border-b w-1/3">인산 (P)</th>
+                                                <th className="p-2 border-b w-1/3">칼륨 (K)</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                            {Array.from({length: 12}, (_, i) => {
+                                                const dist = MONTHLY_DISTRIBUTION[selectedGuide];
+                                                const guide = FERTILIZER_GUIDE[selectedGuide];
+                                                const n = parseFloat((guide.N * dist.N[i]).toFixed(2));
+                                                const p = parseFloat((guide.P * dist.P[i]).toFixed(2));
+                                                const k = parseFloat((guide.K * dist.K[i]).toFixed(2));
+                                                
+                                                const maxVal = 3; 
+
+                                                return (
+                                                    <tr key={i} className="hover:bg-slate-50 transition-colors">
+                                                        <td className="p-2 font-bold text-slate-600 border-r bg-slate-50/50">{i + 1}월</td>
+                                                        <td className="p-0 border-r relative h-10 align-middle">
+                                                            <div className="absolute inset-0 bg-green-500 transition-all" style={{ opacity: Math.min(n / maxVal, 1) * 0.5 }}></div>
+                                                            <span className="relative z-10 font-mono font-semibold text-slate-700">{n > 0 ? `${n}` : ''}</span>
+                                                        </td>
+                                                        <td className="p-0 border-r relative h-10 align-middle">
+                                                            <div className="absolute inset-0 bg-blue-500 transition-all" style={{ opacity: Math.min(p / maxVal, 1) * 0.5 }}></div>
+                                                            <span className="relative z-10 font-mono font-semibold text-slate-700">{p > 0 ? `${p}` : ''}</span>
+                                                        </td>
+                                                        <td className="p-0 relative h-10 align-middle">
+                                                            <div className="absolute inset-0 bg-orange-500 transition-all" style={{ opacity: Math.min(k / maxVal, 1) * 0.5 }}></div>
+                                                            <span className="relative z-10 font-mono font-semibold text-slate-700">{k > 0 ? `${k}` : ''}</span>
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </>
+                    ) : (
+                        <div className="animate-fadeIn">
+                            <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg mb-6">
+                                <p className="text-sm text-blue-800 mb-3 font-medium">나만의 월별 목표 시비량을 구역별로 설정하여 연간 계획을 수립하세요. (단위: g/㎡)</p>
+                                
+                                <div className="flex border-b border-blue-300 mb-3">
+                                    {(['그린', '티', '페어웨이'] as const).map(tab => (
+                                        <button 
+                                            key={tab}
+                                            onClick={() => setActivePlanTab(tab)}
+                                            className={`px-4 py-2 text-sm font-bold rounded-t-lg transition-colors ${
+                                                activePlanTab === tab 
+                                                    ? 'bg-white text-blue-700 border-t border-l border-r border-blue-300 -mb-px' 
+                                                    : 'bg-blue-100 text-blue-600 hover:bg-blue-200'
+                                            }`}
+                                        >
+                                            {tab}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {activePlanTab === '페어웨이' && (
+                                    <div className="flex items-center gap-2 mb-2 px-2">
+                                        <span className="text-xs font-bold text-slate-600">참고 가이드 기준:</span>
+                                        <button onClick={() => setFairwayGuideType('KBG')} className={`px-2 py-1 text-xs rounded border transition-colors ${fairwayGuideType === 'KBG' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-600 border-slate-300'}`}>켄터키블루그라스</button>
+                                        <button onClick={() => setFairwayGuideType('Zoysia')} className={`px-2 py-1 text-xs rounded border transition-colors ${fairwayGuideType === 'Zoysia' ? 'bg-orange-500 text-white border-orange-500' : 'bg-white text-slate-600 border-slate-300'}`}>한국잔디</button>
+                                    </div>
+                                )}
+
+                                <div className="overflow-x-auto bg-white rounded-b-lg border border-t-0 border-blue-300 p-2">
+                                    <table className="w-full text-sm text-center border-collapse bg-white">
+                                        <thead>
+                                            <tr className="bg-slate-100 text-slate-700">
+                                                <th className="p-2 border w-16">월</th>
+                                                <th className="p-2 border text-green-700">목표 N</th>
+                                                <th className="p-2 border text-blue-700">목표 P</th>
+                                                <th className="p-2 border text-orange-700">목표 K</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {(manualTargets[activePlanTab] || []).map((target, i) => {
+                                                let manualGuideKey = selectedGuide;
+                                                if (activePlanTab === '그린') manualGuideKey = '한지형잔디 (벤트그라스)';
+                                                else if (activePlanTab === '티') manualGuideKey = '한지형잔디 (켄터키블루그라스)';
+                                                else if (activePlanTab === '페어웨이') manualGuideKey = fairwayGuideType === 'KBG' ? '한지형잔디 (켄터키블루그라스)' : '난지형잔디 (한국잔디)';
+
+                                                const dist = MONTHLY_DISTRIBUTION[manualGuideKey];
+                                                const guide = FERTILIZER_GUIDE[manualGuideKey];
+                                                const stdN = dist ? (guide.N * dist.N[i]).toFixed(1) : '0';
+                                                const stdP = dist ? (guide.P * dist.P[i]).toFixed(1) : '0';
+                                                const stdK = dist ? (guide.K * dist.K[i]).toFixed(1) : '0';
+
+                                                return (
+                                                <tr key={i} className="border-b">
+                                                    <td className="p-2 font-medium bg-slate-50">{i + 1}월</td>
+                                                    <td className="p-1 border relative group">
+                                                        <input type="number" step="0.1" min="0" value={target.N || ''} onChange={(e) => handleManualTargetChange(i, 'N', e.target.value)} className="w-full text-center p-1 border-gray-300 rounded focus:ring-green-500 focus:border-green-500" placeholder={stdN} />
+                                                        <div className="text-[10px] text-slate-400 text-right pr-1 pointer-events-none">표준:{stdN}</div>
+                                                    </td>
+                                                    <td className="p-1 border relative group">
+                                                        <input type="number" step="0.1" min="0" value={target.P || ''} onChange={(e) => handleManualTargetChange(i, 'P', e.target.value)} className="w-full text-center p-1 border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500" placeholder={stdP} />
+                                                        <div className="text-[10px] text-slate-400 text-right pr-1 pointer-events-none">표준:{stdP}</div>
+                                                    </td>
+                                                    <td className="p-1 border relative group">
+                                                        <input type="number" step="0.1" min="0" value={target.K || ''} onChange={(e) => handleManualTargetChange(i, 'K', e.target.value)} className="w-full text-center p-1 border-gray-300 rounded focus:ring-orange-500 focus:border-orange-500" placeholder={stdK} />
+                                                        <div className="text-[10px] text-slate-400 text-right pr-1 pointer-events-none">표준:{stdK}</div>
+                                                    </td>
+                                                </tr>
+                                            )})}
+                                            <tr className="bg-slate-100 font-bold border-t-2 border-slate-300">
+                                                <td className="p-2">계획 합계</td>
+                                                <td className="p-2 text-green-800">{manualPlanTotal.N.toFixed(1)}</td>
+                                                <td className="p-2 text-blue-800">{manualPlanTotal.P.toFixed(1)}</td>
+                                                <td className="p-2 text-orange-800">{manualPlanTotal.K.toFixed(1)}</td>
+                                            </tr>
+                                            <tr className="bg-slate-50 text-xs border-t border-slate-200">
+                                                <td className="p-2 font-semibold text-slate-600">표준 합계</td>
+                                                <td className="p-2 font-mono text-slate-600">{standardGuideTotal.N}</td>
+                                                <td className="p-2 font-mono text-slate-600">{standardGuideTotal.P}</td>
+                                                <td className="p-2 font-mono text-slate-600">{standardGuideTotal.K}</td>
+                                            </tr>
+                                            <tr className="bg-slate-50 text-xs border-t border-slate-200">
+                                                <td className="p-2 font-semibold text-slate-600">표준 대비</td>
+                                                <td className={`p-2 font-bold ${getRatioColor(manualPlanTotal.N, standardGuideTotal.N)}`}>
+                                                    {standardGuideTotal.N > 0 ? Math.round((manualPlanTotal.N / standardGuideTotal.N) * 100) : 0}%
+                                                </td>
+                                                <td className={`p-2 font-bold ${getRatioColor(manualPlanTotal.P, standardGuideTotal.P)}`}>
+                                                    {standardGuideTotal.P > 0 ? Math.round((manualPlanTotal.P / standardGuideTotal.P) * 100) : 0}%
+                                                </td>
+                                                <td className={`p-2 font-bold ${getRatioColor(manualPlanTotal.K, standardGuideTotal.K)}`}>
+                                                    {standardGuideTotal.K > 0 ? Math.round((manualPlanTotal.K / standardGuideTotal.K) * 100) : 0}%
+                                                </td>
+                                            </tr>
+                                            <tr className="bg-slate-50 text-xs border-t border-slate-200">
+                                                <td className="p-2 font-semibold text-slate-600">차이 (±g)</td>
+                                                <td className={`p-2 font-bold font-mono ${manualPlanDifference.N > 0 ? 'text-red-500' : manualPlanDifference.N < 0 ? 'text-blue-600' : 'text-slate-400'}`}>
+                                                    {manualPlanDifference.N > 0 ? '+' : ''}{manualPlanDifference.N.toFixed(1)}
+                                                </td>
+                                                <td className={`p-2 font-bold font-mono ${manualPlanDifference.P > 0 ? 'text-red-500' : manualPlanDifference.P < 0 ? 'text-blue-600' : 'text-slate-400'}`}>
+                                                    {manualPlanDifference.P > 0 ? '+' : ''}{manualPlanDifference.P.toFixed(1)}
+                                                </td>
+                                                <td className={`p-2 font-bold font-mono ${manualPlanDifference.K > 0 ? 'text-red-500' : manualPlanDifference.K < 0 ? 'text-blue-600' : 'text-slate-400'}`}>
+                                                    {manualPlanDifference.K > 0 ? '+' : ''}{manualPlanDifference.K.toFixed(1)}
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            
+                            <div className="mt-6 bg-white p-4 rounded-lg border shadow-sm">
+                                <h3 className="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2">
+                                    📊 계획 vs 표준 가이드 비교
+                                </h3>
+                                <div className="h-64">
+                                     <ResponsiveContainer width="100%" height="100%">
+                                         <ComposedChart data={manualPlanComparisonData} margin={{top: 5, right: 20, left: 0, bottom: 5}}>
+                                             <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                             <XAxis dataKey="month" fontSize={12} />
+                                             <YAxis fontSize={12} label={{ value: 'g/㎡', angle: -90, position: 'insideLeft' }} />
+                                             <Tooltip contentStyle={{fontSize: '12px'}} />
+                                             <Legend wrapperStyle={{fontSize: "12px"}}/>
+                                             
+                                             <Bar dataKey="planN" name="질소(계획)" fill="#16a34a" barSize={8} />
+                                             <Line type="monotone" dataKey="stdN" name="질소(표준)" stroke="#15803d" strokeWidth={2} strokeDasharray="3 3" dot={false} />
+                                             
+                                             <Bar dataKey="planP" name="인산(계획)" fill="#3b82f6" barSize={8} />
+                                             <Line type="monotone" dataKey="stdP" name="인산(표준)" stroke="#1d4ed8" strokeWidth={2} strokeDasharray="3 3" dot={false} />
+
+                                             <Bar dataKey="planK" name="칼륨(계획)" fill="#f97316" barSize={8} />
+                                             <Line type="monotone" dataKey="stdK" name="칼륨(표준)" stroke="#c2410c" strokeWidth={2} strokeDasharray="3 3" dot={false} />
+                                         </ComposedChart>
+                                     </ResponsiveContainer>
+                                </div>
+                                <p className="text-xs text-slate-400 mt-2 text-center">* 막대는 사용자 계획, 점선은 표준 가이드라인입니다.</p>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </details>
+        </section>
+
+        {/* Fertilizer List Section */}
+        <section className="bg-white rounded-lg shadow-md overflow-hidden">
+            <div 
+                onClick={() => setIsFertilizerListOpen(!isFertilizerListOpen)} 
+                className="p-6 flex justify-between items-center cursor-pointer bg-white hover:bg-slate-50 transition-colors"
+            >
+                <h2 className="text-xl font-semibold text-slate-700 flex items-center gap-2">
+                    🌱 보유 비료 목록
+                </h2>
+                <button className="text-slate-500">
+                    {isFertilizerListOpen ? <ChevronUpIcon /> : <ChevronDownIcon />}
+                </button>
+            </div>
+
+            {isFertilizerListOpen && (
+                <div className="p-6 pt-0 border-t animate-fadeIn">
+                    <div className="mb-4 mt-4 flex flex-col sm:flex-row justify-end items-end sm:items-center gap-4">
+                        {/* Filters */}
+                        <div className="flex gap-2 w-full sm:w-auto">
+                            <div className="relative flex-1 sm:w-32">
+                                <select 
+                                    value={filterUsage}
+                                    onChange={(e) => setFilterUsage(e.target.value)}
+                                    className="w-full appearance-none bg-slate-50 border border-slate-200 text-slate-700 py-2 pl-3 pr-8 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer hover:bg-slate-100 transition-colors"
+                                >
+                                    <option value="전체">전체 용도</option>
+                                    <option value="그린">그린</option>
+                                    <option value="티">티</option>
+                                    <option value="페어웨이">페어웨이</option>
+                                </select>
+                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
+                                    <ChevronDownIcon className="h-4 w-4" />
+                                </div>
+                            </div>
+                            <div className="relative flex-1 sm:w-32">
+                                <select 
+                                    value={filterType}
+                                    onChange={(e) => setFilterType(e.target.value)}
+                                    className="w-full appearance-none bg-slate-50 border border-slate-200 text-slate-700 py-2 pl-3 pr-8 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer hover:bg-slate-100 transition-colors"
+                                >
+                                    <option value="전체">전체 타입</option>
+                                    {uniqueTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                                </select>
+                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
+                                    <ChevronDownIcon className="h-4 w-4" />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {filteredFertilizersList.map(fertilizer => (
+                            <div 
+                                key={fertilizer.name} 
+                                onClick={() => setDetailModalFertilizer(fertilizer)}
+                                className={`
+                                    group relative bg-white rounded-lg border border-slate-200 shadow-sm 
+                                    hover:shadow-md hover:border-blue-400 transition-all cursor-pointer 
+                                    flex flex-col p-3
+                                `}
+                            >
+                                {/* Top Row: Name and Price */}
+                                <div className="flex justify-between items-start mb-1">
+                                    <div className="flex items-center gap-2 overflow-hidden">
+                                        {/* Usage Indicator Dot */}
+                                        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                                            fertilizer.usage === '그린' ? 'bg-green-500' : 
+                                            fertilizer.usage === '티' ? 'bg-blue-500' : 
+                                            'bg-orange-500'
+                                        }`} title={fertilizer.usage}></div>
+                                        
+                                        <h3 className="font-bold text-slate-800 text-sm truncate">
+                                            {fertilizer.name}
+                                        </h3>
+                                        
+                                        {/* NPK Badge */}
+                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-mono border border-slate-200 flex-shrink-0">
+                                            {fertilizer.N}-{fertilizer.P}-{fertilizer.K}
+                                        </span>
+                                    </div>
+                                    
+                                    <div className="text-right pl-2 flex-shrink-0">
+                                        <span className="font-bold text-slate-700 text-sm">{fertilizer.price.toLocaleString()}</span>
+                                        <span className="text-[10px] text-slate-400 font-normal">원/{fertilizer.unit}</span>
+                                    </div>
+                                </div>
+
+                                {/* Middle: Description */}
+                                <p className="text-xs text-slate-500 leading-snug line-clamp-2 mb-2 min-h-[2.5em]">
+                                    {fertilizer.description || "상세 설명 없음"}
+                                </p>
+
+                                {/* Bottom: Type and Action */}
+                                <div className="mt-auto flex justify-between items-center pt-2 border-t border-slate-50">
+                                    <span className="text-[10px] text-slate-400 bg-slate-50 px-2 py-0.5 rounded">
+                                        {fertilizer.type}
+                                    </span>
+                                    <span className="text-[10px] text-blue-500 font-semibold opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                                        상세보기 <ChevronDownIcon className="w-3 h-3 -rotate-90"/>
+                                    </span>
+                                </div>
+                            </div>
+                        ))}
+                        {filteredFertilizersList.length === 0 && (
+                            <div className="col-span-full py-12 text-center bg-slate-50 rounded-xl border border-dashed border-slate-300">
+                                <p className="text-slate-400 text-sm">조건에 맞는 비료가 없습니다.</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+        </section>
+
+        {/* Collapsible Calculator Section */}
+        <section className="bg-white rounded-lg shadow-md overflow-hidden">
+            <div 
+                onClick={() => setIsCalculatorOpen(!isCalculatorOpen)} 
+                className="p-6 flex justify-between items-center cursor-pointer bg-white hover:bg-slate-50 transition-colors"
+            >
+                <h2 className="text-xl font-semibold text-slate-700 flex items-center gap-2">
+                    <CalculatorIcon /> 비료 필요량 계산기
+                </h2>
+                <button className="text-slate-500">
+                    {isCalculatorOpen ? <ChevronUpIcon /> : <ChevronDownIcon />}
+                </button>
+            </div>
+            
+            {isCalculatorOpen && (
+                <div className="p-6 pt-0 border-t animate-fadeIn">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">비료 선택</label>
+                                <select 
+                                    value={calculatorProduct?.name || ''} 
+                                    onChange={(e) => setCalculatorProduct(fertilizers.find(f => f.name === e.target.value) || null)}
+                                    className="w-full p-2 border border-slate-300 rounded-md"
+                                >
+                                    <option value="">비료를 선택하세요</option>
+                                    {fertilizers.map(f => (
+                                        <option key={f.name} value={f.name}>{f.name} (N-P-K: {f.N}-{f.P}-{f.K})</option>
+                                    ))}
+                                </select>
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">시비 면적 (㎡)</label>
+                                <input 
+                                    type="number" 
+                                    value={calculatorArea}
+                                    onChange={(e) => setCalculatorArea(e.target.value)}
+                                    placeholder="예: 500"
+                                    className="w-full p-2 border border-slate-300 rounded-md"
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-medium text-slate-700 mb-1">사용량 ({calculatorProduct?.type === '액상' ? 'ml/㎡' : 'g/㎡'})</label>
+                                <input 
+                                    type="number" 
+                                    value={calculatorRate}
+                                    onChange={(e) => setCalculatorRate(e.target.value)}
+                                    placeholder={calculatorProduct ? parseRateValue(calculatorProduct.rate).toString() : ''}
+                                    className="w-full p-2 border border-slate-300 rounded-md"
+                                />
+                            </div>
+                            <button 
+                                onClick={handleCalculate}
+                                className="w-full bg-green-600 text-white font-semibold py-2 rounded-md hover:bg-green-700 transition-colors"
+                            >
+                                계산하기
+                            </button>
+                        </div>
+                        
+                        <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                            {calculatorResults ? (
+                                <div className="space-y-4 h-full flex flex-col justify-center">
+                                    <div className="text-center">
+                                        <p className="text-sm text-slate-500 mb-1">총 필요 제품량</p>
+                                        <p className="text-3xl font-bold text-slate-800">
+                                            {calculatorResults.totalAmount.toFixed(1)}
+                                            <span className="text-lg font-normal ml-1 text-slate-600">{calculatorResults.unit}</span>
+                                        </p>
+                                    </div>
+                                    <div className="border-t border-slate-200 my-2"></div>
+                                    <div className="space-y-2">
+                                        <p className="text-xs font-semibold text-slate-500 text-center">1㎡당 투입 성분량</p>
+                                        <div className="grid grid-cols-3 gap-2 text-center text-sm">
+                                            <div className="bg-white p-2 rounded border">
+                                                <span className="block text-xs text-slate-400">질소(N)</span>
+                                                <span className="font-bold text-green-600">{calculatorResults.nutrientsPerM2.N.toFixed(2)}g</span>
+                                            </div>
+                                            <div className="bg-white p-2 rounded border">
+                                                <span className="block text-xs text-slate-400">인산(P)</span>
+                                                <span className="font-bold text-blue-600">{calculatorResults.nutrientsPerM2.P.toFixed(2)}g</span>
+                                            </div>
+                                            <div className="bg-white p-2 rounded border">
+                                                <span className="block text-xs text-slate-400">칼륨(K)</span>
+                                                <span className="font-bold text-orange-600">{calculatorResults.nutrientsPerM2.K.toFixed(2)}g</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="text-center mt-auto">
+                                        <p className="text-xs text-slate-400">총 예상 비용</p>
+                                        <p className="text-xl font-bold text-slate-700">{Math.round(calculatorResults.totalCost).toLocaleString()}원</p>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="h-full flex flex-col items-center justify-center text-slate-400">
+                                    <CalculatorIcon />
+                                    <p className="mt-2 text-sm">정보를 입력하고 계산하기를 누르세요.</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+        </section>
+
+        {/* Tabbed Log Input Section */}
+        <section ref={logSectionRef} className="bg-white p-6 rounded-lg shadow-md">
+            <h2 className="text-xl font-semibold text-slate-700 mb-4 flex items-center gap-2">
+                <PencilIcon /> 시비 기록 작성
+            </h2>
+            
+            <div className="space-y-6">
+                 {/* IMPROVED PRODUCT SELECTION */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                     <div className="relative">
+                        <label className="block text-sm font-medium text-slate-700 mb-1">비료 제품 선택</label>
+                        <div 
+                            className="w-full p-2 border border-slate-300 rounded-md cursor-pointer flex justify-between items-center bg-white"
+                            onClick={() => setIsProductSelectOpen(!isProductSelectOpen)}
+                        >
+                            <span className={selectedProduct ? 'text-slate-800' : 'text-slate-400'}>
+                                {selectedProduct ? `${selectedProduct.name} (${selectedProduct.usage})` : '비료를 선택하세요'}
+                            </span>
+                            <ChevronDownIcon className="text-slate-400 w-4 h-4" />
+                        </div>
+                        
+                        {isProductSelectOpen && (
+                            <div className="absolute top-full left-0 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-50 max-h-80 flex flex-col">
+                                <div className="p-2 border-b bg-slate-50 sticky top-0 z-10">
+                                    <input 
+                                        type="text" 
+                                        placeholder="비료명 검색..." 
+                                        value={logSearchTerm}
+                                        onChange={(e) => setLogSearchTerm(e.target.value)}
+                                        onClick={(e) => e.stopPropagation()}
+                                        autoFocus
+                                        className="w-full p-2 text-sm border rounded focus:ring-2 focus:ring-blue-500 outline-none"
+                                    />
+                                </div>
+                                <div className="overflow-y-auto flex-1">
+                                    {['그린', '티', '페어웨이', '기타'].map(group => {
+                                        const items = groupedFertilizers[group] || [];
+                                        if (items.length === 0) return null;
+                                        return (
+                                            <div key={group}>
+                                                <div className="px-3 py-1 bg-slate-100 text-xs font-bold text-slate-500 uppercase">{group}</div>
+                                                {items.map(f => (
+                                                    <div 
+                                                        key={f.name}
+                                                        onClick={() => {
+                                                            setSelectedProduct(f);
+                                                            const rateVal = parseRateValue(f.rate);
+                                                            setApplicationRate(rateVal > 0 ? rateVal.toString() : '');
+                                                            setDate(new Date().toISOString().split('T')[0]);
+                                                            setIsProductSelectOpen(false);
+                                                            setLogSearchTerm('');
+                                                        }}
+                                                        className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm flex justify-between items-center"
+                                                    >
+                                                        <span className="font-medium text-slate-700">{f.name}</span>
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="text-[10px] bg-slate-100 px-1.5 rounded text-slate-500">{f.type}</span>
+                                                            <span className="text-xs text-slate-400">{f.N}-{f.P}-{f.K}</span>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        );
+                                    })}
+                                    {Object.keys(groupedFertilizers).every(k => groupedFertilizers[k].length === 0) && (
+                                        <div className="p-4 text-center text-slate-400 text-sm">검색 결과가 없습니다.</div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                        
+                        {/* Selected Product Info */}
+                        {selectedProduct && (
+                            <div className="mt-2 text-xs text-slate-500 bg-slate-50 p-2 rounded border flex gap-3">
+                                <span>성분: <strong>{selectedProduct.N}-{selectedProduct.P}-{selectedProduct.K}</strong></span>
+                                <span>권장량: <strong>{selectedProduct.rate}</strong></span>
+                                {selectedProduct.stock !== undefined && (
+                                    <span>재고: <strong className={selectedProduct.stock <= 5 ? 'text-red-500' : 'text-slate-700'}>{selectedProduct.stock}</strong></span>
+                                )}
+                            </div>
+                        )}
+                        
+                        {/* Frequent Combinations */}
+                        {frequentCombinations.length > 0 && !selectedProduct && (
+                            <div className="mt-2 flex flex-wrap gap-2">
+                                <span className="text-xs text-slate-500 self-center">자주 사용:</span>
+                                {frequentCombinations.map((combo, idx) => (
+                                    <button 
+                                        key={idx}
+                                        onClick={() => handleQuickAdd(combo.name, combo.rate)}
+                                        className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs rounded-full border transition-colors"
+                                    >
+                                        {combo.name}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">날짜</label>
+                            <input 
+                                type="date" 
+                                value={date} 
+                                onChange={(e) => setDate(e.target.value)}
+                                className="w-full p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-slate-700 mb-1">
+                                사용량 ({selectedProduct?.type === '액상' ? 'ml/㎡' : 'g/㎡'})
+                            </label>
+                            <input 
+                                type="number" 
+                                value={applicationRate} 
+                                onChange={(e) => setApplicationRate(e.target.value)}
+                                placeholder={selectedProduct ? parseRateValue(selectedProduct.rate).toString() : '0'}
+                                className="w-full p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                            />
+                        </div>
+                    </div>
+                </div>
+
+                {/* NUTRIENT PREVIEW CARD */}
+                {nutrientPreview && (
+                    <div className="bg-indigo-50 border border-indigo-100 p-3 rounded-lg flex items-center justify-between animate-fadeIn">
+                        <span className="text-xs font-bold text-indigo-800">✨ 순성분비 미리보기 (1㎡당 투입량)</span>
+                        <div className="flex gap-3 text-sm font-mono">
+                            <span className="text-green-700 font-bold">N: {nutrientPreview.N.toFixed(2)}g</span>
+                            <span className="text-blue-700 font-bold">P: {nutrientPreview.P.toFixed(2)}g</span>
+                            <span className="text-orange-700 font-bold">K: {nutrientPreview.K.toFixed(2)}g</span>
+                        </div>
+                    </div>
+                )}
+
+                {/* Area Input Tabs */}
+                <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                    <p className="text-sm font-medium text-slate-700 mb-3">시비 구역 선택 및 면적 입력</p>
+                    
+                    <div className="flex gap-2 mb-4">
+                        {(['그린', '티', '페어웨이'] as const).map(tab => (
+                            <button
+                                key={tab}
+                                onClick={() => setActiveLogTab(tab)}
+                                className={`flex-1 py-2 text-sm font-bold rounded-lg border transition-all ${
+                                    activeLogTab === tab 
+                                    ? tab === '그린' ? 'bg-green-600 text-white border-green-600 shadow-md' 
+                                      : tab === '티' ? 'bg-blue-600 text-white border-blue-600 shadow-md'
+                                      : 'bg-orange-600 text-white border-orange-600 shadow-md'
+                                    : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-100'
+                                }`}
+                            >
+                                {tab}
+                            </button>
+                        ))}
+                    </div>
+
+                    <div className="animate-fadeIn">
+                         {activeLogTab === '그린' && (
+                            <div>
+                                <div className="flex justify-between mb-1">
+                                    <label className="text-xs font-semibold text-green-800">그린 면적 (㎡)</label>
+                                    <button onClick={() => setLogGreenArea(greenArea)} className="text-[10px] text-blue-600 hover:underline">기본값({greenArea}) 불러오기</button>
+                                </div>
+                                <input 
+                                    type="number" 
+                                    placeholder="그린 면적 입력" 
+                                    value={logGreenArea} 
+                                    onChange={(e) => setLogGreenArea(e.target.value)}
+                                    className="w-full p-3 border border-green-200 rounded-md text-lg font-mono focus:ring-2 focus:ring-green-500 outline-none" 
+                                    autoFocus
+                                />
+                            </div>
+                        )}
+                        {activeLogTab === '티' && (
+                            <div>
+                                <div className="flex justify-between mb-1">
+                                    <label className="text-xs font-semibold text-blue-800">티 면적 (㎡)</label>
+                                    <button onClick={() => setLogTeeArea(teeArea)} className="text-[10px] text-blue-600 hover:underline">기본값({teeArea}) 불러오기</button>
+                                </div>
+                                <input 
+                                    type="number" 
+                                    placeholder="티 면적 입력" 
+                                    value={logTeeArea} 
+                                    onChange={(e) => setLogTeeArea(e.target.value)}
+                                    className="w-full p-3 border border-blue-200 rounded-md text-lg font-mono focus:ring-2 focus:ring-blue-500 outline-none" 
+                                    autoFocus
+                                />
+                            </div>
+                        )}
+                        {activeLogTab === '페어웨이' && (
+                            <div>
+                                <div className="flex justify-between mb-1">
+                                    <label className="text-xs font-semibold text-orange-800">페어웨이 면적 (㎡)</label>
+                                    <button onClick={() => setLogFairwayArea(fairwayArea)} className="text-[10px] text-blue-600 hover:underline">기본값({fairwayArea}) 불러오기</button>
+                                </div>
+                                <input 
+                                    type="number" 
+                                    placeholder="페어웨이 면적 입력" 
+                                    value={logFairwayArea} 
+                                    onChange={(e) => setLogFairwayArea(e.target.value)}
+                                    className="w-full p-3 border border-orange-200 rounded-md text-lg font-mono focus:ring-2 focus:ring-orange-500 outline-none" 
+                                    autoFocus
+                                />
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="mt-3 text-right">
+                         <p className="text-xs text-slate-500">예상 총 비용: <span className="font-bold text-slate-700">{Math.round(estimatedCost).toLocaleString()}원</span></p>
+                    </div>
+                </div>
+                
+                <button 
+                    onClick={handleAddLog} 
+                    className={`w-full py-3 text-white font-bold rounded-md shadow-sm transition-all transform hover:-translate-y-0.5 ${
+                         activeLogTab === '그린' ? 'bg-green-600 hover:bg-green-700' :
+                         activeLogTab === '티' ? 'bg-blue-600 hover:bg-blue-700' :
+                         'bg-orange-600 hover:bg-orange-700'
+                    }`}
+                >
+                    {activeLogTab} 시비 일지 추가하기
+                </button>
+            </div>
+        </section>
+
+        {/* Analysis Section - Charts & Tables */}
+        <section className="bg-white p-6 rounded-lg shadow-md">
+            <h2 className="text-xl font-semibold text-slate-700 mb-4">📊 비료 투입 현황 및 분석</h2>
+            
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                <div className="flex gap-2 overflow-x-auto pb-2 sm:pb-0">
+                     {['all', '그린', '티', '페어웨이'].map(cat => (
+                        <button
+                            key={cat}
+                            onClick={() => setAnalysisCategory(cat as any)}
+                            className={`px-3 py-1.5 rounded-full text-sm font-semibold whitespace-nowrap transition-colors ${
+                                analysisCategory === cat 
+                                    ? 'bg-slate-800 text-white' 
+                                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                        >
+                            {cat === 'all' ? '전체 구역' : cat}
+                        </button>
+                     ))}
+                </div>
+
+                {analysisCategory === '페어웨이' && (
+                    <div className="flex items-center gap-2 p-1 bg-slate-100 rounded-lg">
+                        <span className="text-xs font-bold text-slate-500 pl-2">비교 기준:</span>
+                        <button 
+                            onClick={() => setAnalysisFairwayType('KBG')} 
+                            className={`px-2 py-1 text-xs rounded transition-colors ${analysisFairwayType === 'KBG' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                            켄터키블루그라스
+                        </button>
+                        <button 
+                            onClick={() => setAnalysisFairwayType('Zoysia')} 
+                            className={`px-2 py-1 text-xs rounded transition-colors ${analysisFairwayType === 'Zoysia' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                            한국잔디(중지)
+                        </button>
+                    </div>
+                )}
+            </div>
+            
+            {/* Comparison Guide Info */}
+            {analysisCategory !== 'all' && (
+                <div className="mb-4 text-xs text-slate-500 bg-slate-50 p-2 rounded flex items-center gap-2">
+                    <span className="font-bold">💡 비교 가이드:</span>
+                    {analysisCategory === '그린' && <span>한지형잔디 (벤트그라스) 표준 시비량과 비교합니다.</span>}
+                    {analysisCategory === '티' && <span>한지형잔디 (켄터키블루그라스) 표준 시비량과 비교합니다.</span>}
+                    {analysisCategory === '페어웨이' && <span>{analysisFairwayType === 'KBG' ? '켄터키블루그라스' : '한국잔디'} 표준 시비량과 비교합니다.</span>}
+                </div>
+            )}
+            
+            {/* NEW: Total Product Quantity Summary */}
+            {analysisCategory !== 'all' && (
+                <div className="mb-8 grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-sm">
+                        <h4 className="font-bold text-slate-700 text-sm mb-3">📦 제품 투입 총량 (Top 5)</h4>
+                        <div className="space-y-2">
+                            {aggregatedProductQuantity.length > 0 ? aggregatedProductQuantity.map(([name, data]) => (
+                                <div key={name} className="flex justify-between items-center text-sm p-2 bg-white rounded border border-slate-100">
+                                    <span className="text-slate-700 font-medium truncate flex-1">{name}</span>
+                                    <div className="text-right">
+                                        <span className="font-bold text-slate-900">{data.totalAmount.toFixed(1)} {data.unit}</span>
+                                        <div className="text-right">
+                                            <span className="text-[10px] text-slate-400">{Math.round(data.cost).toLocaleString()}원</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            )) : (
+                                <p className="text-xs text-slate-400 text-center py-2">데이터가 없습니다.</p>
+                            )}
+                        </div>
+                    </div>
+                    {/* Placeholder for future expansion or another summary */}
+                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-center items-center text-center">
+                         <p className="text-sm font-bold text-slate-700 mb-1">총 누적 투입 순성분 (연간)</p>
+                         <div className="flex gap-4 mt-2">
+                             <div>
+                                 <span className="text-xs text-slate-500 block">N (질소)</span>
+                                 <span className="text-xl font-bold text-green-600">
+                                     {monthlyNutrientChartData.reduce((acc, cur) => acc + cur.N, 0).toFixed(1)}g
+                                 </span>
+                             </div>
+                             <div>
+                                 <span className="text-xs text-slate-500 block">P (인산)</span>
+                                 <span className="text-xl font-bold text-blue-600">
+                                     {monthlyNutrientChartData.reduce((acc, cur) => acc + cur.P, 0).toFixed(1)}g
+                                 </span>
+                             </div>
+                             <div>
+                                 <span className="text-xs text-slate-500 block">K (칼륨)</span>
+                                 <span className="text-xl font-bold text-orange-600">
+                                     {monthlyNutrientChartData.reduce((acc, cur) => acc + cur.K, 0).toFixed(1)}g
+                                 </span>
+                             </div>
+                         </div>
+                    </div>
+                </div>
+            )}
+            
+            {/* --- NEW CHART VISUALIZATION (Consolidated N/P/K) --- */}
+            <div className="mb-8">
+                <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-bold text-slate-700 text-lg">{isCumulative ? '📈 1㎡당 누적 순성분 투입 현황' : '📊 1㎡당 월별 순성분 투입 현황'}</h3>
+                    <div className="flex bg-slate-100 rounded-lg p-1">
+                        <button 
+                            onClick={() => setIsCumulative(false)}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${!isCumulative ? 'bg-white shadow text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            월별 보기
+                        </button>
+                        <button 
+                            onClick={() => setIsCumulative(true)}
+                            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all ${isCumulative ? 'bg-white shadow text-purple-600' : 'text-slate-500 hover:text-slate-700'}`}
+                        >
+                            누적 보기
+                        </button>
+                    </div>
+                </div>
+
+                <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+                    <div className="h-80">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <ComposedChart data={finalAnalysisData} margin={{top: 10, right: 10, left: 0, bottom: 0}}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                                <XAxis dataKey="month" fontSize={12} tickFormatter={(val) => `${parseInt(val.split('-')[1])}월`} />
+                                <YAxis fontSize={12} label={{ value: isCumulative ? '1㎡당 누적량 (g/㎡)' : '1㎡당 투입량 (g/㎡)', angle: -90, position: 'insideLeft' }} />
+                                <Tooltip content={<CustomChartTooltip />} cursor={{fill: 'rgba(0,0,0,0.05)'}} />
+                                <Legend wrapperStyle={{fontSize: '12px'}} />
+                                
+                                {/* Actual Inputs (Bars) */}
+                                <Bar dataKey="N" name="질소(N) 순성분" fill="#22c55e" fillOpacity={0.8} barSize={15} />
+                                <Bar dataKey="P" name="인산(P) 순성분" fill="#3b82f6" fillOpacity={0.8} barSize={15} />
+                                <Bar dataKey="K" name="칼륨(K) 순성분" fill="#f97316" fillOpacity={0.8} barSize={15} />
+
+                                {/* Guides (Lines) - Only show if specific category is selected */}
+                                {analysisCategory !== 'all' && (
+                                    <>
+                                        <Line type="monotone" dataKey="guideN" name={isCumulative ? "누적 권장 N" : "권장 N"} stroke="#15803d" strokeWidth={3} strokeDasharray="5 5" dot={{r: 4}} />
+                                        <Line type="monotone" dataKey="guideP" name={isCumulative ? "누적 권장 P" : "권장 P"} stroke="#1d4ed8" strokeWidth={3} strokeDasharray="5 5" dot={{r: 4}} />
+                                        <Line type="monotone" dataKey="guideK" name={isCumulative ? "누적 권장 K" : "권장 K"} stroke="#c2410c" strokeWidth={3} strokeDasharray="5 5" dot={{r: 4}} />
+                                    </>
+                                )}
+                            </ComposedChart>
+                        </ResponsiveContainer>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-2 text-center">* 막대는 실제 투입량(순성분), 점선은 권장/목표량입니다. 그래프에 마우스를 올리면 총 투입량을 확인할 수 있습니다.</p>
+                </div>
+            </div>
+            
+            {/* Detailed Data Table */}
+            <details className="group border rounded-lg">
+                <summary className="p-4 cursor-pointer font-semibold text-slate-600 bg-slate-50 flex items-center justify-between">
+                    <span>📋 상세 데이터 표 보기 ({isCumulative ? '누적' : '월별'}) - 1㎡당 기준</span>
+                    <span className="transition-transform group-open:rotate-180"><ChevronDownIcon /></span>
+                </summary>
+                <div className="p-4 overflow-x-auto animate-fadeIn">
+                    <table className="w-full text-sm text-center border-collapse">
+                        <thead className="bg-slate-100 text-slate-700">
+                            <tr>
+                                <th className="p-2 border sticky left-0 bg-slate-100">월</th>
+                                <th className="p-2 border text-green-700 bg-green-50">질소 (N)</th>
+                                <th className="p-2 border text-blue-700 bg-blue-50">인산 (P)</th>
+                                <th className="p-2 border text-orange-700 bg-orange-50">칼륨 (K)</th>
+                                <th className="p-2 border text-slate-700 bg-slate-200">성분 합계 (g/㎡)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {finalAnalysisData.map((data) => {
+                                const isZero = data.N === 0 && data.P === 0 && data.K === 0;
+                                const monthlyTotal = data.N + data.P + data.K;
+                                return (
+                                    <tr key={data.month} className={`hover:bg-slate-50 border-b ${isZero ? 'text-slate-300' : 'text-slate-700'}`}>
+                                        <td className="p-2 border sticky left-0 bg-white font-medium">{data.month}</td>
+                                        <td className="p-2 border bg-green-50/30">
+                                            <div>{data.N > 0 ? data.N.toFixed(2) : '-'}</div>
+                                            {analysisCategory !== 'all' && <div className="text-[10px] text-slate-400">목표: {data.guideN.toFixed(2)}</div>}
+                                        </td>
+                                        <td className="p-2 border bg-blue-50/30">
+                                            <div>{data.P > 0 ? data.P.toFixed(2) : '-'}</div>
+                                            {analysisCategory !== 'all' && <div className="text-[10px] text-slate-400">목표: {data.guideP.toFixed(2)}</div>}
+                                        </td>
+                                        <td className="p-2 border bg-orange-50/30">
+                                            <div>{data.K > 0 ? data.K.toFixed(2) : '-'}</div>
+                                            {analysisCategory !== 'all' && <div className="text-[10px] text-slate-400">목표: {data.guideK.toFixed(2)}</div>}
+                                        </td>
+                                        <td className="p-2 border bg-slate-50 font-semibold text-slate-800">
+                                            {monthlyTotal > 0 ? monthlyTotal.toFixed(2) : '-'}
+                                        </td>
+                                    </tr>
+                                );
+                            })}
+                            <tr className="bg-slate-100 font-bold border-t-2 border-slate-300">
+                                <td className="p-2 sticky left-0 bg-slate-100">{isCumulative ? '최종 누적 (12월)' : '연간 총계'} (g/㎡)</td>
+                                <td className="p-2 text-green-800">
+                                    {finalAnalysisData.length > 0 ? finalAnalysisData[finalAnalysisData.length-1].N.toFixed(2) : '0.00'}
+                                </td>
+                                <td className="p-2 text-blue-800">
+                                    {finalAnalysisData.length > 0 ? finalAnalysisData[finalAnalysisData.length-1].P.toFixed(2) : '0.00'}
+                                </td>
+                                <td className="p-2 text-orange-800">
+                                    {finalAnalysisData.length > 0 ? finalAnalysisData[finalAnalysisData.length-1].K.toFixed(2) : '0.00'}
+                                </td>
+                                <td className="p-2 text-slate-900 bg-slate-200">
+                                    {finalAnalysisData.length > 0 
+                                        ? (finalAnalysisData[finalAnalysisData.length-1].N + finalAnalysisData[finalAnalysisData.length-1].P + finalAnalysisData[finalAnalysisData.length-1].K).toFixed(2) 
+                                        : '0.00'}
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+        </section>
+        
+        <section className="bg-white p-6 rounded-lg shadow-md flex flex-col items-center text-center space-y-4">
+            <h2 className="text-xl font-bold text-slate-800">🤖 AI 전문가 분석 및 추천</h2>
+            <p className="text-slate-600 max-w-lg">
+                현재 잔디 상태와 시비 기록, 그리고 선택된 관리 가이드를 바탕으로<br/>
+                AI가 최적의 시비 계획을 분석하고 제안해드립니다.
+            </p>
+            
+            <button 
+                onClick={handleGetRecommendation} 
+                disabled={isLoadingAI}
+                className={`w-full bg-purple-600 text-white font-semibold p-3 rounded-md hover:bg-purple-700 transition-colors flex items-center justify-center gap-2 shadow-md ${isLoadingAI ? 'opacity-75 cursor-not-allowed' : ''}`}
+            >
+                {isLoadingAI ? (
+                    <>
+                         <div className="animate-spin rounded-full h-5 w-5 border-2 border-white border-t-transparent"></div>
+                         <span>AI가 데이터를 분석 중입니다...</span>
+                    </>
+                ) : (
+                    <>
+                        <SparklesIcon /> AI 추천 받기
+                    </>
+                )}
+            </button>
+
+            {aiError && (
+                <div className="w-full p-4 bg-red-50 text-red-600 rounded-md border border-red-200 text-sm">
+                    {aiError}
+                </div>
+            )}
+
+            {aiResponse && (
+                <div className="w-full text-left mt-6 animate-fadeIn">
+                    <div className="bg-purple-50 border border-purple-200 rounded-xl p-6 shadow-sm">
+                        <div className="prose prose-sm sm:prose max-w-none text-slate-700 mb-6" dangerouslySetInnerHTML={{ __html: formattedAiResponse }} />
+                        
+                        {aiAction && (
+                            <div className="bg-white border-l-4 border-purple-600 p-4 rounded-r-lg shadow-sm">
+                                <h4 className="font-bold text-purple-800 mb-2 flex items-center gap-2">
+                                    🚀 AI 빠른 실행 제안
+                                </h4>
+                                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                                    <div>
+                                        <p className="text-sm text-slate-600 mb-1">
+                                            <span className="font-semibold text-slate-800">{aiAction.targetArea}</span> 구역에 
+                                            <span className="font-semibold text-slate-800 mx-1">{aiAction.productName}</span>을(를) 
+                                            <span className="font-bold text-purple-600 mx-1">{aiAction.rate}g/㎡</span> 시비하세요.
+                                        </p>
+                                        <p className="text-xs text-slate-500">{aiAction.reason}</p>
+                                    </div>
+                                    <button 
+                                        onClick={handleApplyAiAction}
+                                        className="px-4 py-2 bg-purple-600 text-white text-sm font-bold rounded-lg hover:bg-purple-700 transition shadow-sm whitespace-nowrap"
+                                    >
+                                        일지에 적용하기
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+        </section>
+
+        {/* Log List Section */}
+        <section className="space-y-4">
+             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <h2 className="text-xl font-semibold text-slate-700 flex items-center gap-2">
+                    <ClipboardListIcon /> 시비 일지 기록 ({sortedAndFilteredLog.length})
+                </h2>
+                <div className="flex gap-2">
+                    <button onClick={handleExportToExcel} className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white text-sm font-semibold rounded-md hover:bg-green-700 transition-colors shadow-sm">
+                        <DownloadIcon /> 엑셀 다운로드
+                    </button>
+                </div>
+            </div>
+
+            {/* Filters */}
+            <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200">
+                <div className="flex flex-col sm:flex-row gap-4 text-sm">
+                    <div className="flex-1">
+                        <label className="block text-xs text-slate-500 mb-1">날짜 범위</label>
+                        <div className="flex gap-2 items-center">
+                            <input type="date" value={filterStartDate} onChange={(e) => setFilterStartDate(e.target.value)} className="p-2 border rounded w-full" />
+                            <span>~</span>
+                            <input type="date" value={filterEndDate} onChange={(e) => setFilterEndDate(e.target.value)} className="p-2 border rounded w-full" />
+                        </div>
+                    </div>
+                    <div className="flex-1">
+                        <label className="block text-xs text-slate-500 mb-1">제품명 검색</label>
+                        <input type="text" placeholder="제품명..." value={filterProduct} onChange={(e) => setFilterProduct(e.target.value)} className="p-2 border rounded w-full" />
+                    </div>
+                    <div className="flex-1">
+                         <label className="block text-xs text-slate-500 mb-1">정렬</label>
+                         <div className="flex gap-2">
+                            <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} className="p-2 border rounded w-full bg-white">
+                                <option value="date-desc">최신순</option>
+                                <option value="date-asc">오래된순</option>
+                                <option value="area">면적순</option>
+                                <option value="product">제품명순</option>
+                            </select>
+                            <button onClick={handleResetFilters} className="px-3 py-2 bg-slate-100 text-slate-600 rounded hover:bg-slate-200">초기화</button>
+                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="space-y-4">
+                {sortedAndFilteredLog.length > 0 ? (
+                    sortedAndFilteredLog.map((entry) => (
+                    <div key={entry.id} className="bg-white p-5 rounded-lg shadow-md border-l-4 border-indigo-500 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 hover:shadow-lg transition-shadow">
+                        <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                                <span className="text-sm font-bold text-slate-500">{entry.date}</span>
+                                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
+                                    entry.usage === '그린' ? 'bg-green-100 text-green-800' :
+                                    entry.usage === '티' ? 'bg-blue-100 text-blue-800' :
+                                    'bg-orange-100 text-orange-800'
+                                }`}>{entry.usage}</span>
+                            </div>
+                            <h3 className="text-lg font-bold text-slate-800">{entry.product}</h3>
+                            <div className="text-sm text-slate-600 mt-1 flex flex-wrap gap-x-4 gap-y-1">
+                                <span>면적: <span className="font-semibold">{entry.area}㎡</span></span>
+                                <span>사용량: <span className="font-semibold">{entry.applicationRate}{entry.applicationUnit}</span></span>
+                                <span>총 비용: <span className="font-semibold text-indigo-600">{Math.round(entry.totalCost).toLocaleString()}원</span></span>
+                            </div>
+                        </div>
+                        
+                        {/* Mini Nutrient Badge */}
+                        <div className="flex gap-2 text-xs font-mono bg-slate-50 p-2 rounded border">
+                            {NUTRIENTS.slice(0, 3).map(n => (
+                                <div key={n} className="text-center px-1">
+                                    <span className="block text-slate-400 text-[10px]">{n}</span>
+                                    <span className={`font-bold ${n==='N'?'text-green-600':n==='P'?'text-blue-600':'text-orange-600'}`}>
+                                        {entry.nutrients[n]?.toFixed(1)}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+
+                        <button 
+                            onClick={() => removeLogEntry(entry.id)} 
+                            className="text-slate-400 hover:text-red-500 p-2 rounded-full hover:bg-red-50 transition-colors"
+                            title="삭제"
+                        >
+                            <TrashIcon />
+                        </button>
+                    </div>
+                ))
+                ) : (
+                    <div className="text-center py-12 bg-white rounded-lg shadow-sm border border-dashed">
+                        <ClipboardListIcon className="h-12 w-12 mx-auto text-slate-300 mb-3" />
+                        <p className="text-slate-500">기록된 시비 일지가 없습니다.</p>
+                    </div>
+                )}
+            </div>
+        </section>
+
+        {/* Floating Chat Button */}
+        <button
+            onClick={() => setIsChatOpen(true)}
+            className="fixed bottom-6 right-6 bg-purple-600 hover:bg-purple-700 text-white p-4 rounded-full shadow-lg transition-transform hover:scale-110 z-50"
+            aria-label="Open Chatbot"
+        >
+            <ChatIcon />
+        </button>
+        
+        {/* Chatbot Modal */}
+        <Chatbot isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />
+      </div>
+      
+      {/* Fertilizer Detail Modal */}
+      {detailModalFertilizer && (
+        <FertilizerDetailModal 
+            fertilizer={detailModalFertilizer} 
+            onClose={() => setDetailModalFertilizer(null)} 
+        />
+      )}
+      
+    </div>
+  );
+}
