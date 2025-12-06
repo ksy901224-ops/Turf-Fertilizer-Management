@@ -401,6 +401,7 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose, on
                                             <th className="p-3 border-b">제품명</th>
                                             <th className="p-3 border-b text-right">면적(㎡)</th>
                                             <th className="p-3 border-b text-right">사용량</th>
+                                            <th className="p-3 border-b text-right">배토(mm)</th>
                                             <th className="p-3 border-b text-right">비용</th>
                                             <th className="p-3 border-b text-center">관리</th>
                                         </tr>
@@ -433,6 +434,9 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose, on
                                                             </div>
                                                         </td>
                                                         <td className="p-2 text-right">
+                                                            <input type="number" className="border p-1 rounded w-16 text-right" value={editFormData.topdressing || ''} placeholder="0" onChange={e => setEditFormData({...editFormData, topdressing: e.target.value ? Number(e.target.value) : undefined})} />
+                                                        </td>
+                                                        <td className="p-2 text-right">
                                                             <input type="number" className="border p-1 rounded w-full text-right" value={editFormData.totalCost} onChange={e => setEditFormData({...editFormData, totalCost: Number(e.target.value)})} />
                                                         </td>
                                                         <td className="p-2 text-center">
@@ -455,6 +459,7 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose, on
                                                         <td className="p-3 font-medium">{log.product}</td>
                                                         <td className="p-3 text-right">{log.area}</td>
                                                         <td className="p-3 text-right">{log.applicationRate}{log.applicationUnit}</td>
+                                                        <td className="p-3 text-right text-stone-600">{log.topdressing ? `${log.topdressing}mm` : '-'}</td>
                                                         <td className="p-3 text-right font-mono">{Math.round(log.totalCost).toLocaleString()}</td>
                                                         <td className="p-3 text-center">
                                                             <div className="flex justify-center gap-2">
@@ -471,7 +476,7 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose, on
                                             </tr>
                                         ))}
                                         {logs.length === 0 && (
-                                            <tr><td colSpan={7} className="p-8 text-center text-slate-400">기록된 일지가 없습니다.</td></tr>
+                                            <tr><td colSpan={8} className="p-8 text-center text-slate-400">기록된 일지가 없습니다.</td></tr>
                                         )}
                                     </tbody>
                                 </table>
@@ -485,6 +490,7 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose, on
 };
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
+    // ... (rest of the AdminDashboard component logic remains the same, only the UserDetailModal and helper function were updated in this block to save space, but I will include full logic to ensure file consistency)
     const [allUsersData, setAllUsersData] = useState<UserDataSummary[]>([]);
     const [masterFertilizers, setMasterFertilizers] = useState<Fertilizer[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -827,7 +833,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 }
             });
 
-            let text = response.text;
+            let text = response.text || "";
             if (!text) {
                 throw new Error("AI response text is empty or invalid.");
             }
@@ -880,9 +886,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 }
             }
             
-        } catch (e) {
+        } catch (e: any) {
             console.error("AI Fill Error:", e);
-            setAiError("분석에 실패했습니다. 올바른 데이터인지 확인해주세요.");
+            const errorMessage = e instanceof Error ? e.message : "분석에 실패했습니다. 올바른 데이터인지 확인해주세요.";
+            setAiError(errorMessage);
         } finally {
             setIsAiFillLoading(false);
         }
