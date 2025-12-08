@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { GoogleGenAI } from '@google/genai';
@@ -8,11 +9,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import { Chatbot } from './Chatbot';
 import { ChatIcon, LogoutIcon, CalculatorIcon, TrashIcon, CalendarIcon, ClipboardListIcon, CloseIcon, PencilIcon, PlusIcon, SparklesIcon, ChevronDownIcon, ChevronUpIcon, CameraIcon, DocumentSearchIcon, UploadIcon, DownloadIcon } from './icons';
 import { Login } from './Login';
-import { AdminDashboard } from './Aimport { generateText } from "ai";
-const { text } = await generateText({
-  model: "google/gemini-2.5-flash-lite-preview-09-2025",
-  prompt: "What is love?",
-});
+import { AdminDashboard } from './AdminDashboard';
 
 
 const LoadingSpinner = () => (
@@ -424,6 +421,9 @@ export default function TurfFertilizerApp() {
 
   // Calculator State
   const [isCalculatorOpen, setIsCalculatorOpen] = useState(false);
+  const [calculatorTab, setCalculatorTab] = useState<'standard' | 'reverse'>('standard');
+  
+  // Standard Calc
   const [calculatorProduct, setCalculatorProduct] = useState<Fertilizer | null>(null);
   const [calculatorArea, setCalculatorArea] = useState('');
   const [calculatorRate, setCalculatorRate] = useState('');
@@ -434,6 +434,12 @@ export default function TurfFertilizerApp() {
     nutrientsPerM2: NutrientLog;
     unit: 'kg' | 'L';
   } | null>(null);
+
+  // Reverse Calc
+  const [reverseCalcProduct, setReverseCalcProduct] = useState<Fertilizer | null>(null);
+  const [reverseTargetNutrient, setReverseTargetNutrient] = useState<'N' | 'P' | 'K'>('N');
+  const [reverseTargetAmount, setReverseTargetAmount] = useState(''); // g/m2
+  const [reverseCalcResult, setReverseCalcResult] = useState<{ rate: number, unit: string } | null>(null);
 
   // Log Sorting and Filtering State
   const [sortOrder, setSortOrder] = useState('date-desc');
@@ -603,6 +609,25 @@ export default function TurfFertilizerApp() {
     }
   }, [calculatorProduct]);
 
+  // Reverse Calc Logic
+  useEffect(() => {
+      if (reverseCalcProduct && reverseTargetAmount) {
+          const amount = parseFloat(reverseTargetAmount);
+          const pct = (reverseCalcProduct as any)[reverseTargetNutrient] || 0;
+          if (amount > 0 && pct > 0) {
+              // Rate (g or ml) = Target (g) / (Pct / 100)
+              // If liquid, assumes density ~ 1 unless specifically handled, or rate is just ml/m2
+              const calculatedRate = amount / (pct / 100);
+              const unit = reverseCalcProduct.type === '액상' ? 'ml/㎡' : 'g/㎡';
+              setReverseCalcResult({ rate: calculatedRate, unit });
+          } else {
+              setReverseCalcResult(null);
+          }
+      } else {
+          setReverseCalcResult(null);
+      }
+  }, [reverseCalcProduct, reverseTargetNutrient, reverseTargetAmount]);
+
   const handleAddLog = () => {
     if (!selectedProduct) { alert('선택 필요: 비료를 선택하세요.'); return; }
     if (!date || !applicationRate) { alert('입력 필요: 날짜와 사용량을 입력하세요.'); return; }
@@ -655,7 +680,7 @@ export default function TurfFertilizerApp() {
 
         setIsImportingPlan(true);
         try {
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
             let promptParts: any[] = [];
             const basePrompt = `
                 Analyze the provided Annual Fertilizer Plan document.
@@ -1284,7 +1309,7 @@ export default function TurfFertilizerApp() {
     `;
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: fullPrompt,
@@ -1711,7 +1736,7 @@ export default function TurfFertilizerApp() {
                             
                             <div className="mt-6 bg-white p-4 rounded-lg border shadow-sm">
                                 <h3 className="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2">
-                                    📊 계획 vs 표준 가이드 비교
+                                    📊 계획 vs 표준 가이드 vs 작년 실제
                                 </h3>
                                 <div className="h-64">
                                      <ResponsiveContainer width="100%" height="100%">
@@ -1724,6 +1749,7 @@ export default function TurfFertilizerApp() {
                                              
                                              <Bar dataKey="planN" name="질소(계획)" fill="#16a34a" barSize={8} />
                                              <Line type="monotone" dataKey="stdN" name="질소(표준)" stroke="#15803d" strokeWidth={2} strokeDasharray="3 3" dot={false} />
+                                             <Line type="monotone" dataKey="lastN" name="질소(작년)" stroke="#86efac" strokeWidth={2} dot={{r:3}} />
                                              
                                              <Bar dataKey="planP" name="인산(계획)" fill="#3b82f6" barSize={8} />
                                              <Line type="monotone" dataKey="stdP" name="인산(표준)" stroke="#1d4ed8" strokeWidth={2} strokeDasharray="3 3" dot={false} />
@@ -1733,7 +1759,7 @@ export default function TurfFertilizerApp() {
                                          </ComposedChart>
                                      </ResponsiveContainer>
                                 </div>
-                                <p className="text-xs text-slate-400 mt-2 text-center">* 막대는 사용자 계획, 점선은 표준 가이드라인입니다.</p>
+                                <p className="text-xs text-slate-400 mt-2 text-center">* 막대는 사용자 계획, 점선은 표준 가이드, 실선은 작년 데이터입니다.</p>
                             </div>
                         </div>
                     )}
@@ -1870,90 +1896,173 @@ export default function TurfFertilizerApp() {
             
             {isCalculatorOpen && (
                 <div className="p-6 pt-0 border-t animate-fadeIn">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">비료 선택</label>
-                                <select 
-                                    value={calculatorProduct?.name || ''} 
-                                    onChange={(e) => setCalculatorProduct(fertilizers.find(f => f.name === e.target.value) || null)}
-                                    className="w-full p-2 border border-slate-300 rounded-md"
+                    <div className="flex border-b mb-4">
+                        <button 
+                            className={`flex-1 py-2 text-sm font-bold ${calculatorTab === 'standard' ? 'text-green-600 border-b-2 border-green-600' : 'text-slate-500'}`}
+                            onClick={() => setCalculatorTab('standard')}
+                        >
+                            기본 계산 (면적/사용량 → 총량)
+                        </button>
+                        <button 
+                            className={`flex-1 py-2 text-sm font-bold ${calculatorTab === 'reverse' ? 'text-blue-600 border-b-2 border-blue-600' : 'text-slate-500'}`}
+                            onClick={() => setCalculatorTab('reverse')}
+                        >
+                            역계산 (목표 성분 → 사용량)
+                        </button>
+                    </div>
+
+                    {calculatorTab === 'standard' ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">비료 선택</label>
+                                    <select 
+                                        value={calculatorProduct?.name || ''} 
+                                        onChange={(e) => setCalculatorProduct(fertilizers.find(f => f.name === e.target.value) || null)}
+                                        className="w-full p-2 border border-slate-300 rounded-md"
+                                    >
+                                        <option value="">비료를 선택하세요</option>
+                                        {fertilizers.map(f => (
+                                            <option key={f.name} value={f.name}>{f.name} (N-P-K: {f.N}-{f.P}-{f.K})</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">시비 면적 (㎡)</label>
+                                    <input 
+                                        type="number" 
+                                        value={calculatorArea}
+                                        onChange={(e) => setCalculatorArea(e.target.value)}
+                                        placeholder="예: 500"
+                                        className="w-full p-2 border border-slate-300 rounded-md"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">사용량 ({calculatorProduct?.type === '액상' ? 'ml/㎡' : 'g/㎡'})</label>
+                                    <input 
+                                        type="number" 
+                                        value={calculatorRate}
+                                        onChange={(e) => setCalculatorRate(e.target.value)}
+                                        placeholder={calculatorProduct ? parseRateValue(calculatorProduct.rate).toString() : ''}
+                                        className="w-full p-2 border border-slate-300 rounded-md"
+                                    />
+                                </div>
+                                <button 
+                                    onClick={handleCalculate}
+                                    className="w-full bg-green-600 text-white font-semibold py-2 rounded-md hover:bg-green-700 transition-colors"
                                 >
-                                    <option value="">비료를 선택하세요</option>
-                                    {fertilizers.map(f => (
-                                        <option key={f.name} value={f.name}>{f.name} (N-P-K: {f.N}-{f.P}-{f.K})</option>
-                                    ))}
-                                </select>
+                                    계산하기
+                                </button>
                             </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">시비 면적 (㎡)</label>
-                                <input 
-                                    type="number" 
-                                    value={calculatorArea}
-                                    onChange={(e) => setCalculatorArea(e.target.value)}
-                                    placeholder="예: 500"
-                                    className="w-full p-2 border border-slate-300 rounded-md"
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-slate-700 mb-1">사용량 ({calculatorProduct?.type === '액상' ? 'ml/㎡' : 'g/㎡'})</label>
-                                <input 
-                                    type="number" 
-                                    value={calculatorRate}
-                                    onChange={(e) => setCalculatorRate(e.target.value)}
-                                    placeholder={calculatorProduct ? parseRateValue(calculatorProduct.rate).toString() : ''}
-                                    className="w-full p-2 border border-slate-300 rounded-md"
-                                />
-                            </div>
-                            <button 
-                                onClick={handleCalculate}
-                                className="w-full bg-green-600 text-white font-semibold py-2 rounded-md hover:bg-green-700 transition-colors"
-                            >
-                                계산하기
-                            </button>
-                        </div>
-                        
-                        <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
-                            {calculatorResults ? (
-                                <div className="space-y-4 h-full flex flex-col justify-center">
-                                    <div className="text-center">
-                                        <p className="text-sm text-slate-500 mb-1">총 필요 제품량</p>
-                                        <p className="text-3xl font-bold text-slate-800">
-                                            {calculatorResults.totalAmount.toFixed(1)}
-                                            <span className="text-lg font-normal ml-1 text-slate-600">{calculatorResults.unit}</span>
-                                        </p>
-                                    </div>
-                                    <div className="border-t border-slate-200 my-2"></div>
-                                    <div className="space-y-2">
-                                        <p className="text-xs font-semibold text-slate-500 text-center">1㎡당 투입 성분량</p>
-                                        <div className="grid grid-cols-3 gap-2 text-center text-sm">
-                                            <div className="bg-white p-2 rounded border">
-                                                <span className="block text-xs text-slate-400">질소(N)</span>
-                                                <span className="font-bold text-green-600">{calculatorResults.nutrientsPerM2.N.toFixed(2)}g</span>
-                                            </div>
-                                            <div className="bg-white p-2 rounded border">
-                                                <span className="block text-xs text-slate-400">인산(P)</span>
-                                                <span className="font-bold text-blue-600">{calculatorResults.nutrientsPerM2.P.toFixed(2)}g</span>
-                                            </div>
-                                            <div className="bg-white p-2 rounded border">
-                                                <span className="block text-xs text-slate-400">칼륨(K)</span>
-                                                <span className="font-bold text-orange-600">{calculatorResults.nutrientsPerM2.K.toFixed(2)}g</span>
+                            
+                            <div className="bg-slate-50 p-4 rounded-lg border border-slate-200">
+                                {calculatorResults ? (
+                                    <div className="space-y-4 h-full flex flex-col justify-center">
+                                        <div className="text-center">
+                                            <p className="text-sm text-slate-500 mb-1">총 필요 제품량</p>
+                                            <p className="text-3xl font-bold text-slate-800">
+                                                {calculatorResults.totalAmount.toFixed(1)}
+                                                <span className="text-lg font-normal ml-1 text-slate-600">{calculatorResults.unit}</span>
+                                            </p>
+                                        </div>
+                                        <div className="border-t border-slate-200 my-2"></div>
+                                        <div className="space-y-2">
+                                            <p className="text-xs font-semibold text-slate-500 text-center">1㎡당 투입 성분량</p>
+                                            <div className="grid grid-cols-3 gap-2 text-center text-sm">
+                                                <div className="bg-white p-2 rounded border">
+                                                    <span className="block text-xs text-slate-400">질소(N)</span>
+                                                    <span className="font-bold text-green-600">{calculatorResults.nutrientsPerM2.N.toFixed(2)}g</span>
+                                                </div>
+                                                <div className="bg-white p-2 rounded border">
+                                                    <span className="block text-xs text-slate-400">인산(P)</span>
+                                                    <span className="font-bold text-blue-600">{calculatorResults.nutrientsPerM2.P.toFixed(2)}g</span>
+                                                </div>
+                                                <div className="bg-white p-2 rounded border">
+                                                    <span className="block text-xs text-slate-400">칼륨(K)</span>
+                                                    <span className="font-bold text-orange-600">{calculatorResults.nutrientsPerM2.K.toFixed(2)}g</span>
+                                                </div>
                                             </div>
                                         </div>
+                                        <div className="text-center mt-auto">
+                                            <p className="text-xs text-slate-400">총 예상 비용</p>
+                                            <p className="text-xl font-bold text-slate-700">{Math.round(calculatorResults.totalCost).toLocaleString()}원</p>
+                                        </div>
                                     </div>
-                                    <div className="text-center mt-auto">
-                                        <p className="text-xs text-slate-400">총 예상 비용</p>
-                                        <p className="text-xl font-bold text-slate-700">{Math.round(calculatorResults.totalCost).toLocaleString()}원</p>
+                                ) : (
+                                    <div className="h-full flex flex-col items-center justify-center text-slate-400">
+                                        <CalculatorIcon />
+                                        <p className="mt-2 text-sm">정보를 입력하고 계산하기를 누르세요.</p>
                                     </div>
-                                </div>
-                            ) : (
-                                <div className="h-full flex flex-col items-center justify-center text-slate-400">
-                                    <CalculatorIcon />
-                                    <p className="mt-2 text-sm">정보를 입력하고 계산하기를 누르세요.</p>
-                                </div>
-                            )}
+                                )}
+                            </div>
                         </div>
-                    </div>
+                    ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+                            <div className="space-y-4">
+                                <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 text-xs text-blue-800 mb-2">
+                                    특정 영양소(예: 질소 3g)를 맞추기 위해 비료를 얼마나 살포해야 하는지 계산합니다.
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-slate-700 mb-1">비료 선택</label>
+                                    <select 
+                                        value={reverseCalcProduct?.name || ''} 
+                                        onChange={(e) => setReverseCalcProduct(fertilizers.find(f => f.name === e.target.value) || null)}
+                                        className="w-full p-2 border border-slate-300 rounded-md"
+                                    >
+                                        <option value="">비료를 선택하세요</option>
+                                        {fertilizers.map(f => (
+                                            <option key={f.name} value={f.name}>{f.name} (N-P-K: {f.N}-{f.P}-{f.K})</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">목표 성분</label>
+                                        <select 
+                                            value={reverseTargetNutrient}
+                                            onChange={(e) => setReverseTargetNutrient(e.target.value as any)}
+                                            className="w-full p-2 border border-slate-300 rounded-md"
+                                        >
+                                            <option value="N">질소 (N)</option>
+                                            <option value="P">인산 (P)</option>
+                                            <option value="K">칼륨 (K)</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-slate-700 mb-1">목표 투입량 (g/㎡)</label>
+                                        <input 
+                                            type="number" 
+                                            value={reverseTargetAmount}
+                                            onChange={(e) => setReverseTargetAmount(e.target.value)}
+                                            placeholder="예: 3"
+                                            className="w-full p-2 border border-slate-300 rounded-md"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 flex flex-col justify-center items-center text-center">
+                                {reverseCalcResult ? (
+                                    <div className="animate-fadeIn">
+                                        <p className="text-sm text-slate-500 mb-2">
+                                            {reverseTargetNutrient} 성분 {reverseTargetAmount}g을 투입하기 위한
+                                        </p>
+                                        <p className="text-xs font-bold text-slate-700 mb-4">{reverseCalcProduct?.name}</p>
+                                        <div className="bg-white p-6 rounded-full border-4 border-blue-100 w-40 h-40 flex flex-col justify-center items-center shadow-sm mx-auto">
+                                            <span className="text-xs text-slate-400 mb-1">필요 살포량</span>
+                                            <span className="text-2xl font-bold text-blue-600">{reverseCalcResult.rate.toFixed(1)}</span>
+                                            <span className="text-sm font-medium text-slate-500">{reverseCalcResult.unit}</span>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="text-slate-400">
+                                        <CalculatorIcon />
+                                        <p className="mt-2 text-sm">목표 성분량을 입력하면 결과가 표시됩니다.</p>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
                 </div>
             )}
         </section>
@@ -2167,6 +2276,20 @@ export default function TurfFertilizerApp() {
                         )}
                     </div>
 
+                    <div className="mt-4 pt-4 border-t border-slate-200">
+                        <label className="block text-xs font-bold text-slate-700 mb-1">배토 작업 (선택사항)</label>
+                        <div className="flex items-center gap-2">
+                            <input 
+                                type="number" 
+                                value={topdressing}
+                                onChange={(e) => setTopdressing(e.target.value)}
+                                placeholder="두께 (mm)"
+                                className="w-32 p-2 border border-slate-300 rounded text-sm focus:ring-2 focus:ring-slate-400 outline-none"
+                            />
+                            <span className="text-sm text-slate-500">mm</span>
+                        </div>
+                    </div>
+
                     <div className="mt-3 text-right">
                          <p className="text-xs text-slate-500">예상 총 비용: <span className="font-bold text-slate-700">{Math.round(estimatedCost).toLocaleString()}원</span></p>
                     </div>
@@ -2257,28 +2380,36 @@ export default function TurfFertilizerApp() {
                         </div>
                     </div>
                     {/* Placeholder for future expansion or another summary */}
-                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-center items-center text-center">
-                         <p className="text-sm font-bold text-slate-700 mb-1">총 누적 투입 순성분 (연간)</p>
-                         <div className="flex gap-4 mt-2">
-                             <div>
-                                 <span className="text-xs text-slate-500 block">N (질소)</span>
-                                 <span className="text-xl font-bold text-green-600">
-                                     {monthlyNutrientChartData.reduce((acc, cur) => acc + cur.N, 0).toFixed(1)}g
-                                 </span>
+                    <div className="flex flex-col gap-2">
+                        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-center items-center text-center flex-1">
+                             <p className="text-sm font-bold text-slate-700 mb-1">총 누적 투입 순성분 (연간)</p>
+                             <div className="flex gap-4 mt-2">
+                                 <div>
+                                     <span className="text-xs text-slate-500 block">N (질소)</span>
+                                     <span className="text-xl font-bold text-green-600">
+                                         {monthlyNutrientChartData.reduce((acc, cur) => acc + cur.N, 0).toFixed(1)}g
+                                     </span>
+                                 </div>
+                                 <div>
+                                     <span className="text-xs text-slate-500 block">P (인산)</span>
+                                     <span className="text-xl font-bold text-blue-600">
+                                         {monthlyNutrientChartData.reduce((acc, cur) => acc + cur.P, 0).toFixed(1)}g
+                                     </span>
+                                 </div>
+                                 <div>
+                                     <span className="text-xs text-slate-500 block">K (칼륨)</span>
+                                     <span className="text-xl font-bold text-orange-600">
+                                         {monthlyNutrientChartData.reduce((acc, cur) => acc + cur.K, 0).toFixed(1)}g
+                                     </span>
+                                 </div>
                              </div>
-                             <div>
-                                 <span className="text-xs text-slate-500 block">P (인산)</span>
-                                 <span className="text-xl font-bold text-blue-600">
-                                     {monthlyNutrientChartData.reduce((acc, cur) => acc + cur.P, 0).toFixed(1)}g
-                                 </span>
-                             </div>
-                             <div>
-                                 <span className="text-xs text-slate-500 block">K (칼륨)</span>
-                                 <span className="text-xl font-bold text-orange-600">
-                                     {monthlyNutrientChartData.reduce((acc, cur) => acc + cur.K, 0).toFixed(1)}g
-                                 </span>
-                             </div>
-                         </div>
+                        </div>
+                        {annualTopdressingTotal > 0 && (
+                            <div className="bg-stone-100 p-3 rounded-xl border border-stone-200 shadow-sm flex items-center justify-between px-6">
+                                <span className="text-sm font-bold text-stone-600">🏜️ 연간 누적 배토량</span>
+                                <span className="text-xl font-bold text-stone-800">{annualTopdressingTotal} mm</span>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}
@@ -2521,6 +2652,7 @@ export default function TurfFertilizerApp() {
                             <div className="text-sm text-slate-600 mt-1 flex flex-wrap gap-x-4 gap-y-1">
                                 <span>면적: <span className="font-semibold">{entry.area}㎡</span></span>
                                 <span>사용량: <span className="font-semibold">{entry.applicationRate}{entry.applicationUnit}</span></span>
+                                {entry.topdressing && <span>배토: <span className="font-semibold text-stone-600">{entry.topdressing}mm</span></span>}
                                 <span>총 비용: <span className="font-semibold text-indigo-600">{Math.round(entry.totalCost).toLocaleString()}원</span></span>
                             </div>
                         </div>
