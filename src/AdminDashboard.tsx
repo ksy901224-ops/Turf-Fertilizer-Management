@@ -490,7 +490,6 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose, on
 };
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
-    // ... (rest of the AdminDashboard component logic remains the same, only the UserDetailModal and helper function were updated in this block to save space, but I will include full logic to ensure file consistency)
     const [allUsersData, setAllUsersData] = useState<UserDataSummary[]>([]);
     const [masterFertilizers, setMasterFertilizers] = useState<Fertilizer[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -784,7 +783,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         setIsAiFillLoading(true);
         setAiError(null);
         try {
-            const ai = new GoogleGenAI({ apiKey: (process.env.API_KEY as string) });
+            const ai = new GoogleGenAI({ apiKey: (process.env.API_KEY as unknown as string) });
             const groupsJSON = JSON.stringify(FERTILIZER_TYPE_GROUPS);
             
             const prompt = `
@@ -833,7 +832,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 }
             });
 
-            let text = response.text || "";
+            let text = response.text as string | undefined;
             if (!text) {
                 throw new Error("AI response text is empty or invalid.");
             }

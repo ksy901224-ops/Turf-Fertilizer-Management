@@ -1,41 +1,11 @@
-
 import { Fertilizer, LogEntry, User, NotificationSettings, UserDataSummary } from './types';
 import { FERTILIZER_GUIDE } from './constants';
-
-// --- LocalStorage DB Configuration ---
-const USERS_KEY = 'turf_users';
-const DATA_PREFIX = 'turf_data_';
+import { db } from './firebase';
+import { doc, getDoc, setDoc, updateDoc, collection, getDocs, deleteDoc } from 'firebase/firestore';
 
 // --- Helper Functions ---
 
 const delay = (ms: number = 300) => new Promise(resolve => setTimeout(resolve, ms));
-
-const getUsersMap = (): Record<string, User> => {
-    try {
-        const json = localStorage.getItem(USERS_KEY);
-        return json ? JSON.parse(json) : {};
-    } catch (e) {
-        console.error("Error reading users from storage", e);
-        return {};
-    }
-};
-
-const saveUsersMap = (users: Record<string, User>) => {
-    localStorage.setItem(USERS_KEY, JSON.stringify(users));
-};
-
-const getUserDataRaw = (username: string) => {
-    try {
-        const json = localStorage.getItem(DATA_PREFIX + username);
-        return json ? JSON.parse(json) : null;
-    } catch (e) {
-        return null;
-    }
-};
-
-const saveUserDataRaw = (username: string, data: any) => {
-    localStorage.setItem(DATA_PREFIX + username, JSON.stringify(data));
-};
 
 const initialFertilizers: Fertilizer[] = [
     { name: 'HPG-N16 (16-2-12)', usage: '그린', type: '완효성', N:16, P:2, K:12, Ca:2, Mg:1, S:4, Fe:0, Mn:0.5, Zn:0, Cu:0, B:0, Mo:0, Cl:0, Na:0, Si:0, Ni:0, Co:0, V:0, price:80000, unit:'20kg', rate:'15g/㎡', npkRatio:'8-1-6', stock: 40, imageUrl: 'https://via.placeholder.com/400x300/22c55e/ffffff?text=HPG-N16', lowStockAlertEnabled: false, description: '질소 함량이 높고 완효성 성분이 포함되어 있어 그린의 생육을 오랫동안 안정적으로 지속시켜줍니다. 생육기 전반에 사용하기 적합합니다.' },
@@ -44,116 +14,141 @@ const initialFertilizers: Fertilizer[] = [
     { name: '액상 영양제 (10-10-10)', usage: '그린', type: '액상', N:10, P:10, K:10, Ca:0, Mg:0, S:0, Fe:0, Mn:0, Zn:0, Cu:0, B:0, Mo:0, Cl:0, Na:0, Si:0, Ni:0, Co:0, V:0, price:70000, unit:'10L', rate:'2ml/㎡', density:1.1, concentration:10, npkRatio:'1-1-1', stock: 15, lowStockAlertEnabled: false, description: '빠른 흡수가 특징인 액상 비료로, 뿌리 기능이 저하되었거나 스트레스 시기에 즉각적인 영양 공급이 필요할 때 효과적입니다.' }
 ];
 
-// Ensure 'admin' exists for demo purposes
-const seedAdminIfNeeded = () => {
-    const users = getUsersMap();
-    if (!users['admin']) {
-        users['admin'] = {
-            username: 'admin',
-            password: 'admin',
-            golfCourse: '관리자',
-            isApproved: true
-        };
-        saveUsersMap(users);
-        
-        if (!getUserDataRaw('admin')) {
-             saveUserDataRaw('admin', {
-                 logs: [],
-                 fertilizers: initialFertilizers,
-                 settings: {},
-                 notificationSettings: { enabled: false, email: '', threshold: 10 }
-             });
+// Ensure 'admin' exists in Firestore
+const seedAdminIfNeeded = async () => {
+    try {
+        const adminRef = doc(db, "users", "admin");
+        const adminSnap = await getDoc(adminRef);
+
+        if (!adminSnap.exists()) {
+            await setDoc(adminRef, {
+                username: 'admin',
+                password: 'admin',
+                golfCourse: '관리자',
+                isApproved: true
+            });
+            
+            const adminDataRef = doc(db, "appData", "admin");
+            const adminDataSnap = await getDoc(adminDataRef);
+            if (!adminDataSnap.exists()) {
+                await setDoc(adminDataRef, {
+                    logs: [],
+                    fertilizers: initialFertilizers,
+                    settings: {},
+                    notificationSettings: { enabled: false, email: '', threshold: 10 }
+                });
+            }
         }
+    } catch (e) {
+        console.error("Error seeding admin:", e);
     }
 };
 
 // --- User Management ---
 
 export const validateUser = async (username: string, password_provided: string): Promise<User | 'pending' | null> => {
-    await delay();
-    seedAdminIfNeeded();
-    
-    const users = getUsersMap();
-    const user = users[username];
+    try {
+        await seedAdminIfNeeded();
+        const userRef = doc(db, "users", username);
+        const userSnap = await getDoc(userRef);
 
-    if (user && user.password === password_provided) {
-        if (username !== 'admin' && !user.isApproved) {
-            return 'pending';
+        if (userSnap.exists()) {
+            const user = userSnap.data() as User;
+            if (user.password === password_provided) {
+                if (username !== 'admin' && !user.isApproved) {
+                    return 'pending';
+                }
+                const { password, ...userWithoutPassword } = user;
+                return userWithoutPassword;
+            }
         }
-        const { password, ...userWithoutPassword } = user;
-        return userWithoutPassword;
+        return null;
+    } catch (e) {
+        console.error("Login error:", e);
+        return null;
     }
-    return null;
 };
 
 export const createUser = async (username: string, password_provided: string, golfCourse: string): Promise<User | 'exists' | 'invalid'> => {
-    await delay();
     if (!username.trim() || !password_provided || !golfCourse.trim()) {
         return 'invalid';
     }
     
-    const users = getUsersMap();
+    try {
+        const userRef = doc(db, "users", username);
+        const userSnap = await getDoc(userRef);
 
-    if (users[username]) {
-        return 'exists';
+        if (userSnap.exists()) {
+            return 'exists';
+        }
+
+        const newUser: User = { username, password: password_provided, golfCourse, isApproved: false };
+        await setDoc(userRef, newUser);
+        
+        // Initialize App Data document for this user
+        const dataRef = doc(db, "appData", username);
+        await setDoc(dataRef, {
+            logs: [],
+            fertilizers: [], 
+            settings: {},
+            notificationSettings: { enabled: false, email: '', threshold: 10 }
+        });
+
+        const { password, ...userWithoutPassword } = newUser;
+        return userWithoutPassword;
+    } catch (e) {
+        console.error("Signup error:", e);
+        return 'invalid';
     }
-
-    const newUser: User = { username, password: password_provided, golfCourse, isApproved: false };
-    users[username] = newUser;
-    saveUsersMap(users);
-    
-    // Initialize App Data document for this user
-    saveUserDataRaw(username, {
-        logs: [],
-        fertilizers: [], 
-        settings: {},
-        notificationSettings: { enabled: false, email: '', threshold: 10 }
-    });
-
-    const { password, ...userWithoutPassword } = newUser;
-    return userWithoutPassword;
 };
 
 export const approveUser = async (username: string): Promise<void> => {
-    await delay();
-    const users = getUsersMap();
-    if (users[username]) {
-        users[username].isApproved = true;
-        saveUsersMap(users);
+    try {
+        const userRef = doc(db, "users", username);
+        await updateDoc(userRef, { isApproved: true });
+    } catch (e) {
+        console.error("Approval error", e);
     }
 };
 
 export const getUser = async (username: string): Promise<User | null> => {
-    await delay();
-    const users = getUsersMap();
-    if (users[username]) {
-        const { password, ...userWithoutPassword } = users[username];
-        return userWithoutPassword;
+    try {
+        const userRef = doc(db, "users", username);
+        const userSnap = await getDoc(userRef);
+        if (userSnap.exists()) {
+            const user = userSnap.data() as User;
+            const { password, ...userWithoutPassword } = user;
+            return userWithoutPassword;
+        }
+        return null;
+    } catch (e) {
+        return null;
     }
-    return null;
 };
 
 export const deleteUser = async (username: string): Promise<void> => {
-    await delay();
-    const users = getUsersMap();
-    if (users[username]) {
-        delete users[username];
-        saveUsersMap(users);
-        // Also remove their data
-        localStorage.removeItem(DATA_PREFIX + username);
+    try {
+        await deleteDoc(doc(db, "users", username));
+        await deleteDoc(doc(db, "appData", username));
+    } catch (e) {
+        console.error("Delete user error", e);
     }
 };
 
-// --- Data Functions ---
+// --- Data Functions (Firestore) ---
+
+// Helper to get raw data doc
+const getAppData = async (username: string) => {
+    const docRef = doc(db, "appData", username);
+    const docSnap = await getDoc(docRef);
+    return docSnap.exists() ? docSnap.data() : null;
+};
 
 export const getFertilizers = async (username: string): Promise<Fertilizer[]> => {
-    await delay();
-    seedAdminIfNeeded();
-
-    const data = getUserDataRaw(username);
+    await seedAdminIfNeeded();
+    const data = await getAppData(username);
     const fertilizers = data?.fertilizers || [];
 
-    // If 'admin' list is requested and empty (shouldn't happen due to seed, but safe fallback), return initial
     if (username === 'admin' && fertilizers.length === 0) {
         return initialFertilizers;
     }
@@ -166,23 +161,18 @@ export const getFertilizers = async (username: string): Promise<Fertilizer[]> =>
 };
 
 export const saveFertilizers = async (username: string, fertilizers: Fertilizer[]): Promise<void> => {
-    await delay();
-    const data = getUserDataRaw(username) || {};
-    data.fertilizers = fertilizers;
-    saveUserDataRaw(username, data);
+    const docRef = doc(db, "appData", username);
+    await setDoc(docRef, { fertilizers }, { merge: true });
 };
 
 export const getLog = async (username: string): Promise<LogEntry[]> => {
-    await delay();
-    const data = getUserDataRaw(username);
+    const data = await getAppData(username);
     return data?.logs || [];
 };
 
 export const saveLog = async (username: string, log: LogEntry[]): Promise<void> => {
-    await delay();
-    const data = getUserDataRaw(username) || {};
-    data.logs = log;
-    saveUserDataRaw(username, data);
+    const docRef = doc(db, "appData", username);
+    await setDoc(docRef, { logs: log }, { merge: true });
 };
 
 export interface UserSettings {
@@ -196,7 +186,6 @@ export interface UserSettings {
 }
 
 export const getSettings = async (username: string): Promise<UserSettings> => {
-    await delay();
     const defaultManualTargets = {
         '그린': Array(12).fill({ N: 0, P: 0, K: 0 }),
         '티': Array(12).fill({ N: 0, P: 0, K: 0 }),
@@ -213,11 +202,12 @@ export const getSettings = async (username: string): Promise<UserSettings> => {
         fairwayGuideType: 'KBG'
     };
 
-    const data = getUserDataRaw(username);
+    const data = await getAppData(username);
     const userSettings = data?.settings;
 
     if (userSettings) {
          let manualTargets = userSettings.manualTargets;
+         // Handle migration or data fix if needed
          if (Array.isArray(manualTargets)) {
              manualTargets = {
                  '그린': manualTargets,
@@ -234,15 +224,12 @@ export const getSettings = async (username: string): Promise<UserSettings> => {
 };
 
 export const saveSettings = async (username: string, settings: UserSettings): Promise<void> => {
-    await delay();
-    const data = getUserDataRaw(username) || {};
-    data.settings = settings;
-    saveUserDataRaw(username, data);
+    const docRef = doc(db, "appData", username);
+    await setDoc(docRef, { settings }, { merge: true });
 };
 
 export const getNotificationSettings = async (username: string): Promise<NotificationSettings> => {
-    await delay();
-    const data = getUserDataRaw(username);
+    const data = await getAppData(username);
     if (data?.notificationSettings) {
         return data.notificationSettings;
     }
@@ -250,22 +237,24 @@ export const getNotificationSettings = async (username: string): Promise<Notific
 };
 
 export const saveNotificationSettings = async (username: string, settings: NotificationSettings): Promise<void> => {
-    await delay();
-    const data = getUserDataRaw(username) || {};
-    data.notificationSettings = settings;
-    saveUserDataRaw(username, data);
+    const docRef = doc(db, "appData", username);
+    await setDoc(docRef, { notificationSettings: settings }, { merge: true });
 };
 
 export const getAllUsersData = async (): Promise<UserDataSummary[]> => {
     await delay();
-    const users = getUsersMap();
+    const usersCol = collection(db, "users");
+    const usersSnapshot = await getDocs(usersCol);
+    
     const allData: UserDataSummary[] = [];
 
-    for (const username of Object.keys(users)) {
+    for (const userDoc of usersSnapshot.docs) {
+        const username = userDoc.id;
         if (username === 'admin') continue;
-        const user = users[username];
-
-        const appData = getUserDataRaw(username) || { logs: [], fertilizers: [] };
+        
+        const user = userDoc.data() as User;
+        const appData = await getAppData(username) || { logs: [], fertilizers: [] };
+        
         const logs = appData.logs || [];
         const fertilizers = appData.fertilizers || [];
         
