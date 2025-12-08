@@ -8,7 +8,11 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import { Chatbot } from './Chatbot';
 import { ChatIcon, LogoutIcon, CalculatorIcon, TrashIcon, CalendarIcon, ClipboardListIcon, CloseIcon, PencilIcon, PlusIcon, SparklesIcon, ChevronDownIcon, ChevronUpIcon, CameraIcon, DocumentSearchIcon, UploadIcon, DownloadIcon } from './icons';
 import { Login } from './Login';
-import { AdminDashboard } from './AdminDashboard';
+import { AdminDashboard } from './Aimport { generateText } from "ai";
+const { text } = await generateText({
+  model: "google/gemini-2.5-flash-lite-preview-09-2025",
+  prompt: "What is love?",
+});
 
 
 const LoadingSpinner = () => (
