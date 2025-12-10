@@ -783,7 +783,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         setIsAiFillLoading(true);
         setAiError(null);
         try {
-            const ai = new GoogleGenAI({ apiKey: (process.env.API_KEY as string) });
+            const ai = new GoogleGenAI({ apiKey: (process.env.API_KEY || '') });
             const groupsJSON = JSON.stringify(FERTILIZER_TYPE_GROUPS);
             
             const prompt = `
@@ -911,7 +911,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 const data = target.result;
                 if (!data || typeof data === 'string') return; // Expecting ArrayBuffer for 'array' type read
                 
-                const wb = XLSX.read(data, { type: 'array' });
+                const wb = XLSX.read(data as any, { type: 'array' });
                 const wsname = wb.SheetNames[0];
                 if (!wsname) return;
                 const ws = wb.Sheets[wsname];
