@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { GoogleGenAI } from '@google/genai';
@@ -371,9 +372,12 @@ export default function TurfFertilizerApp() {
       '페어웨이': Array(12).fill({ N: 0, P: 0, K: 0 }),
   });
   const [fairwayGuideType, setFairwayGuideType] = useState<'KBG' | 'Zoysia'>('KBG');
+  const [showLastYearComparison, setShowLastYearComparison] = useState(false); // Toggle for chart comparison
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logSectionRef = useRef<HTMLElement>(null);
+  const planFileInputRef = useRef<HTMLInputElement>(null);
+
   const [activeUsageTab, setActiveUsageTab] = useState(USAGE_CATEGORIES[0]);
   const [selectedProduct, setSelectedProduct] = useState<Fertilizer | null>(null);
   const [detailModalFertilizer, setDetailModalFertilizer] = useState<Fertilizer | null>(null);
@@ -390,8 +394,15 @@ export default function TurfFertilizerApp() {
   const [logFairwayArea, setLogFairwayArea] = useState('');
   const [date, setDate] = useState('');
   const [applicationRate, setApplicationRate] = useState('');
+  const [topdressing, setTopdressing] = useState(''); // New Topdressing state
   const [logSearchTerm, setLogSearchTerm] = useState('');
+  const [logFilterType, setLogFilterType] = useState<string>('전체');
   const [isProductSelectOpen, setIsProductSelectOpen] = useState(false);
+  
+  // Reverse Calculator State
+  const [isReverseCalcOpen, setIsReverseCalcOpen] = useState(false);
+  const [targetNutrientType, setTargetNutrientType] = useState<'N'|'P'|'K'>('N');
+  const [targetNutrientAmount, setTargetNutrientAmount] = useState('');
 
 
   // Replaces graphView
@@ -553,6 +564,7 @@ export default function TurfFertilizerApp() {
         setLogFairwayArea('');
         setDate('');
         setApplicationRate('');
+        setTopdressing('');
         setAiResponse('');
         setAiError(null);
         setAiAction(null);
@@ -571,6 +583,7 @@ export default function TurfFertilizerApp() {
         setLogTeeArea('');
         setLogFairwayArea('');
         setDate('');
+        setTopdressing('');
     }
   }, [selectedProduct]);
   
@@ -612,6 +625,8 @@ export default function TurfFertilizerApp() {
          return;
     }
     
+    const parsedTopdressing = topdressing ? parseFloat(topdressing) : undefined;
+    
     const { totalCost, nutrients, nutrientCosts } = getApplicationDetails(selectedProduct, parsedArea, parsedApplicationRate);
     const rateUnit = selectedProduct.type === '액상' ? 'ml/㎡' : 'g/㎡';
 
@@ -626,6 +641,7 @@ export default function TurfFertilizerApp() {
         applicationUnit: rateUnit,
         usage: usage,
         nutrientCosts: nutrientCosts,
+        topdressing: parsedTopdressing
     };
 
     setLog(prev => [entry, ...prev].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
@@ -633,6 +649,8 @@ export default function TurfFertilizerApp() {
     alert(`완료: ${usage} 구역에 시비 기록이 추가되었습니다.`);
     setIsProductSelectOpen(false); // Close product select if open
     setLogSearchTerm('');
+    setLogFilterType('전체');
+    setTopdressing(''); // Reset topdressing field
   };
 
   const removeLogEntry = (idToRemove: string) => {
@@ -662,6 +680,9 @@ export default function TurfFertilizerApp() {
       if (logSearchTerm) {
           filtered = filtered.filter(f => f.name.toLowerCase().includes(logSearchTerm.toLowerCase()));
       }
+      if (logFilterType !== '전체') {
+          filtered = filtered.filter(f => f.type === logFilterType);
+      }
       
       const groups: Record<string, Fertilizer[]> = {
           '그린': [], '티': [], '페어웨이': []
@@ -676,12 +697,36 @@ export default function TurfFertilizerApp() {
           }
       });
       return groups;
-  }, [fertilizers, logSearchTerm]);
+  }, [fertilizers, logSearchTerm, logFilterType]);
 
   const filteredLogForAnalysis = useMemo(() => {
     if (analysisCategory === 'all') return log;
     return log.filter(entry => entry.usage === analysisCategory);
   }, [log, analysisCategory]);
+
+  // Calculate Last Year's Actuals for Chart Comparison
+  const lastYearActualNutrients = useMemo(() => {
+      const lastYear = new Date().getFullYear() - 1;
+      const data: { [monthIdx: number]: { N: number, P: number, K: number } } = {};
+      for(let i=0; i<12; i++) data[i] = { N: 0, P: 0, K: 0 };
+
+      // Filter logs for last year and current active area
+      log.forEach(entry => {
+          const entryDate = new Date(entry.date);
+          if (entryDate.getFullYear() === lastYear && entry.usage === activePlanTab) {
+              const month = entryDate.getMonth();
+              const product = fertilizers.find(f => f.name === entry.product);
+              if (product) {
+                  // Re-calculate nutrients per m2 based on recorded rate
+                  const n = getApplicationDetails(product, 1, entry.applicationRate).nutrients;
+                  data[month].N += n.N || 0;
+                  data[month].P += n.P || 0;
+                  data[month].K += n.K || 0;
+              }
+          }
+      });
+      return data;
+  }, [log, activePlanTab, fertilizers]);
 
   // Aggregate Product Quantity Data
   const aggregatedProductQuantity = useMemo(() => {
@@ -923,16 +968,22 @@ export default function TurfFertilizerApp() {
         const guide = FERTILIZER_GUIDE[guideKey];
         const dist = MONTHLY_DISTRIBUTION[guideKey];
         
-        return (manualTargets[activePlanTab] || []).map((target, i) => ({
-            month: `${i + 1}월`,
-            planN: target.N,
-            planP: target.P,
-            planK: target.K,
-            stdN: dist ? parseFloat((guide.N * dist.N[i]).toFixed(2)) : 0,
-            stdP: dist ? parseFloat((guide.P * dist.P[i]).toFixed(2)) : 0,
-            stdK: dist ? parseFloat((guide.K * dist.K[i]).toFixed(2)) : 0,
-        }));
-    }, [manualTargets, activePlanTab, selectedGuide, fairwayGuideType]);
+        return (manualTargets[activePlanTab] || []).map((target, i) => {
+            const actualLastYear = lastYearActualNutrients[i];
+            return {
+                month: `${i + 1}월`,
+                planN: target.N,
+                planP: target.P,
+                planK: target.K,
+                stdN: dist ? parseFloat((guide.N * dist.N[i]).toFixed(2)) : 0,
+                stdP: dist ? parseFloat((guide.P * dist.P[i]).toFixed(2)) : 0,
+                stdK: dist ? parseFloat((guide.K * dist.K[i]).toFixed(2)) : 0,
+                lastYearN: parseFloat(actualLastYear.N.toFixed(2)),
+                lastYearP: parseFloat(actualLastYear.P.toFixed(2)),
+                lastYearK: parseFloat(actualLastYear.K.toFixed(2)),
+            };
+        });
+    }, [manualTargets, activePlanTab, selectedGuide, fairwayGuideType, lastYearActualNutrients]);
 
 
   const sortedAndFilteredLog = useMemo(() => {
@@ -990,6 +1041,7 @@ export default function TurfFertilizerApp() {
             '구분': entry.usage,
             '면적(㎡)': entry.area,
             '사용량': `${entry.applicationRate}${entry.applicationUnit}`,
+            '배토(mm)': entry.topdressing || 0,
             '총 비용(원)': Math.round(entry.totalCost),
         };
         NUTRIENTS.forEach(n => {
@@ -1015,6 +1067,74 @@ export default function TurfFertilizerApp() {
           ...prev,
           [activePlanTab]: currentAreaTargets
       }));
+  };
+  
+  // Plan Import Function
+  const handleImportPlan = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+          const data = new Uint8Array(event.target?.result as ArrayBuffer);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const sheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+          // Expected Format: Month (1-12), N, P, K
+          const newTargets = Array(12).fill({ N: 0, P: 0, K: 0 });
+          jsonData.forEach((row: any) => {
+              const month = parseInt(row['월'] || row['Month']);
+              if (month >= 1 && month <= 12) {
+                  newTargets[month - 1] = {
+                      N: parseFloat(row['N'] || 0),
+                      P: parseFloat(row['P'] || 0),
+                      K: parseFloat(row['K'] || 0),
+                  };
+              }
+          });
+
+          setManualTargets(prev => ({
+              ...prev,
+              [activePlanTab]: newTargets
+          }));
+          alert(`${activePlanTab} 구역의 연간 계획이 불러와졌습니다.`);
+          if (planFileInputRef.current) planFileInputRef.current.value = '';
+      };
+      reader.readAsArrayBuffer(file);
+  };
+
+  // Reverse Calculation Handler
+  const handleReverseCalculation = () => {
+      if (!selectedProduct) {
+          alert('비료 제품을 먼저 선택해주세요.');
+          return;
+      }
+      
+      const target = parseFloat(targetNutrientAmount);
+      if (isNaN(target) || target <= 0) {
+          alert('올바른 목표 성분량을 입력해주세요.');
+          return;
+      }
+
+      const nutrientContent = (selectedProduct as any)[targetNutrientType] || 0;
+      if (nutrientContent <= 0) {
+          alert(`선택한 제품에는 ${targetNutrientType} 성분이 없습니다.`);
+          return;
+      }
+
+      // Formula: Required Rate (g or ml / m2) = Target (g/m2) / (Percentage / 100)
+      // Note: If liquid, this logic assumes rate is ml/m2 and concentration applies similarly or based on density.
+      // For simplicity in standard NPK fertilizers:
+      // Rate = Target / (Content / 100)
+      
+      // If it's a liquid product with specific concentration mechanics not just %, this is an approximation based on % field in type
+      
+      const calculatedRate = target / (nutrientContent / 100);
+      setApplicationRate(calculatedRate.toFixed(2));
+      alert(`목표 ${targetNutrientType} ${target}g/㎡ 달성을 위해\n약 ${calculatedRate.toFixed(1)} ${selectedProduct.type === '액상' ? 'ml' : 'g'}/㎡ 살포가 필요합니다.`);
+      setIsReverseCalcOpen(false);
   };
   
   const manualPlanTotal = useMemo(() => {
@@ -1265,10 +1385,10 @@ export default function TurfFertilizerApp() {
   const CustomChartTooltip = ({ active, payload, label }: any) => {
       if (active && payload && payload.length) {
           // Extract data from payload
-          const n = payload.find((p:any) => p.dataKey === 'N')?.value || 0;
-          const p = payload.find((p:any) => p.dataKey === 'P')?.value || 0;
-          const k = payload.find((p:any) => p.dataKey === 'K')?.value || 0;
-          const total = n + p + k;
+          const n = payload.find((p:any) => p.dataKey === 'planN')?.value || 0;
+          const p = payload.find((p:any) => p.dataKey === 'planP')?.value || 0;
+          const k = payload.find((p:any) => p.dataKey === 'planK')?.value || 0;
+          const lastN = payload.find((p:any) => p.dataKey === 'lastYearN')?.value || 0;
 
           return (
               <div className="bg-white p-3 border shadow-lg rounded text-xs">
@@ -1276,25 +1396,17 @@ export default function TurfFertilizerApp() {
                   <div className="space-y-1">
                       <p className="flex items-center gap-2">
                           <span className="w-2 h-2 rounded-full bg-green-500"></span>
-                          <span className="text-slate-600">질소(N):</span>
+                          <span className="text-slate-600">계획 질소(N):</span>
                           <span className="font-bold text-green-700">{n.toFixed(2)} g/㎡</span>
                       </p>
-                      <p className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-                          <span className="text-slate-600">인산(P):</span>
-                          <span className="font-bold text-blue-700">{p.toFixed(2)} g/㎡</span>
-                      </p>
-                      <p className="flex items-center gap-2">
-                          <span className="w-2 h-2 rounded-full bg-orange-500"></span>
-                          <span className="text-slate-600">칼륨(K):</span>
-                          <span className="font-bold text-orange-700">{k.toFixed(2)} g/㎡</span>
-                      </p>
+                      {lastN > 0 && (
+                          <p className="flex items-center gap-2">
+                              <span className="w-2 h-2 rounded-full bg-slate-300"></span>
+                              <span className="text-slate-500">작년 질소(N):</span>
+                              <span className="font-bold text-slate-600">{lastN.toFixed(2)} g/㎡</span>
+                          </p>
+                      )}
                   </div>
-                  <div className="border-t my-2 border-slate-200"></div>
-                  <p className="font-bold text-slate-800 flex justify-between gap-4">
-                      <span>{isCumulative ? '누적' : '총'} 투입량 (순성분):</span>
-                      <span>{total.toFixed(2)} g/㎡</span>
-                  </p>
               </div>
           );
       }
@@ -1430,7 +1542,7 @@ export default function TurfFertilizerApp() {
                                 <p className="text-sm text-blue-800 mb-3 font-medium">나만의 월별 목표 시비량을 구역별로 설정하여 연간 계획을 수립하세요. (단위: g/㎡)</p>
                                 
                                 {/* Area Tab Selector */}
-                                <div className="flex border-b border-blue-300 mb-3">
+                                <div className="flex border-b border-blue-300 mb-3 items-end">
                                     {(['그린', '티', '페어웨이'] as const).map(tab => (
                                         <button 
                                             key={tab}
@@ -1444,6 +1556,19 @@ export default function TurfFertilizerApp() {
                                             {tab}
                                         </button>
                                     ))}
+                                    <div className="ml-auto flex gap-2 pb-1">
+                                        <label className="flex items-center gap-1 bg-white px-2 py-1 rounded text-xs border cursor-pointer hover:bg-slate-50">
+                                            <UploadIcon className="w-3 h-3 text-slate-500" />
+                                            <span className="text-slate-600 font-semibold">엑셀 계획 불러오기</span>
+                                            <input 
+                                                type="file" 
+                                                ref={planFileInputRef}
+                                                onChange={handleImportPlan} 
+                                                accept=".xlsx, .xls" 
+                                                className="hidden" 
+                                            />
+                                        </label>
+                                    </div>
                                 </div>
 
                                 {activePlanTab === '페어웨이' && (
@@ -1540,19 +1665,31 @@ export default function TurfFertilizerApp() {
                             
                             {/* Comparison Chart Section */}
                             <div className="mt-6 bg-white p-4 rounded-lg border shadow-sm">
-                                <h3 className="text-sm font-bold text-slate-700 mb-4 flex items-center gap-2">
-                                    📊 계획 vs 표준 가이드 비교
-                                </h3>
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                                        📊 계획 vs 표준 가이드 vs 작년 실적 비교
+                                    </h3>
+                                    <label className="flex items-center gap-2 text-xs font-bold text-slate-600 cursor-pointer select-none">
+                                        <input 
+                                            type="checkbox" 
+                                            checked={showLastYearComparison}
+                                            onChange={(e) => setShowLastYearComparison(e.target.checked)}
+                                            className="rounded text-blue-600 focus:ring-blue-500"
+                                        />
+                                        작년({new Date().getFullYear() - 1}) 실적 비교하기
+                                    </label>
+                                </div>
                                 <div className="h-64">
                                      <ResponsiveContainer width="100%" height="100%">
                                          <ComposedChart data={manualPlanComparisonData} margin={{top: 5, right: 20, left: 0, bottom: 5}}>
                                              <CartesianGrid strokeDasharray="3 3" vertical={false} />
                                              <XAxis dataKey="month" fontSize={12} />
                                              <YAxis fontSize={12} label={{ value: 'g/㎡', angle: -90, position: 'insideLeft' }} />
-                                             <Tooltip contentStyle={{fontSize: '12px'}} />
+                                             <Tooltip content={<CustomChartTooltip />} cursor={{fill: 'rgba(0,0,0,0.05)'}} />
                                              <Legend wrapperStyle={{fontSize: "12px"}}/>
                                              
                                              <Bar dataKey="planN" name="질소(계획)" fill="#16a34a" barSize={8} />
+                                             {showLastYearComparison && <Line type="step" dataKey="lastYearN" name="질소(작년)" stroke="#94a3b8" strokeWidth={2} dot={false} />}
                                              <Line type="monotone" dataKey="stdN" name="질소(표준)" stroke="#15803d" strokeWidth={2} strokeDasharray="3 3" dot={false} />
                                              
                                              <Bar dataKey="planP" name="인산(계획)" fill="#3b82f6" barSize={8} />
@@ -1563,7 +1700,7 @@ export default function TurfFertilizerApp() {
                                          </ComposedChart>
                                      </ResponsiveContainer>
                                 </div>
-                                <p className="text-xs text-slate-400 mt-2 text-center">* 막대는 사용자 계획, 점선은 표준 가이드라인입니다.</p>
+                                <p className="text-xs text-slate-400 mt-2 text-center">* 막대는 사용자 계획, 점선은 표준 가이드라인, 회색 실선은 작년 실적입니다.</p>
                             </div>
                         </div>
                     )}
@@ -1811,7 +1948,7 @@ export default function TurfFertilizerApp() {
                         
                         {isProductSelectOpen && (
                             <div className="absolute top-full left-0 w-full mt-1 bg-white border border-slate-200 rounded-lg shadow-xl z-50 max-h-80 flex flex-col">
-                                <div className="p-2 border-b bg-slate-50 sticky top-0 z-10">
+                                <div className="p-2 border-b bg-slate-50 sticky top-0 z-10 space-y-2">
                                     <input 
                                         type="text" 
                                         placeholder="비료명 검색..." 
@@ -1821,6 +1958,17 @@ export default function TurfFertilizerApp() {
                                         autoFocus
                                         className="w-full p-2 text-sm border rounded focus:ring-2 focus:ring-blue-500 outline-none"
                                     />
+                                    <select 
+                                        value={logFilterType}
+                                        onChange={(e) => setLogFilterType(e.target.value)}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="w-full p-2 text-xs border rounded bg-slate-50 text-slate-700 outline-none cursor-pointer"
+                                    >
+                                        <option value="전체">전체 타입</option>
+                                        {uniqueTypes.map(t => (
+                                            <option key={t} value={t}>{t}</option>
+                                        ))}
+                                    </select>
                                 </div>
                                 <div className="overflow-y-auto flex-1">
                                     {['그린', '티', '페어웨이', '기타'].map(group => {
@@ -1839,6 +1987,7 @@ export default function TurfFertilizerApp() {
                                                             setDate(new Date().toISOString().split('T')[0]);
                                                             setIsProductSelectOpen(false);
                                                             setLogSearchTerm('');
+                                                            setLogFilterType('전체');
                                                         }}
                                                         className="px-3 py-2 hover:bg-blue-50 cursor-pointer text-sm flex justify-between items-center"
                                                     >
@@ -1898,8 +2047,17 @@ export default function TurfFertilizerApp() {
                             />
                         </div>
                         <div>
-                            <label className="block text-sm font-medium text-slate-700 mb-1">
-                                사용량 ({selectedProduct?.type === '액상' ? 'ml/㎡' : 'g/㎡'})
+                            <label className="block text-sm font-medium text-slate-700 mb-1 flex justify-between items-center">
+                                <span>사용량 ({selectedProduct?.type === '액상' ? 'ml/㎡' : 'g/㎡'})</span>
+                                {selectedProduct && (
+                                    <button 
+                                        onClick={() => setIsReverseCalcOpen(!isReverseCalcOpen)}
+                                        className="text-[10px] text-blue-600 font-bold hover:underline flex items-center gap-1"
+                                    >
+                                        <CalculatorIcon className="w-3 h-3" />
+                                        역계산기
+                                    </button>
+                                )}
                             </label>
                             <input 
                                 type="number" 
@@ -1908,7 +2066,59 @@ export default function TurfFertilizerApp() {
                                 placeholder={selectedProduct ? parseRateValue(selectedProduct.rate).toString() : '0'}
                                 className="w-full p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
                             />
+                            
+                            {/* Reverse Calculator Popover */}
+                            {isReverseCalcOpen && selectedProduct && (
+                                <div className="mt-2 p-3 bg-blue-50 border border-blue-200 rounded-md shadow-sm animate-fadeIn">
+                                    <p className="text-xs font-bold text-blue-800 mb-2">💡 목표 성분량으로 사용량 자동 계산</p>
+                                    <div className="flex gap-2 mb-2">
+                                        {(['N', 'P', 'K'] as const).map(n => (
+                                            <label key={n} className="flex items-center gap-1 text-xs cursor-pointer">
+                                                <input 
+                                                    type="radio" 
+                                                    name="targetNutrient" 
+                                                    checked={targetNutrientType === n} 
+                                                    onChange={() => setTargetNutrientType(n)}
+                                                    className="text-blue-600"
+                                                />
+                                                {n}
+                                            </label>
+                                        ))}
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <input 
+                                            type="number" 
+                                            value={targetNutrientAmount}
+                                            onChange={(e) => setTargetNutrientAmount(e.target.value)}
+                                            placeholder={`목표 ${targetNutrientType} (g/㎡)`}
+                                            className="flex-1 p-1 text-xs border rounded"
+                                        />
+                                        <button 
+                                            onClick={handleReverseCalculation}
+                                            className="bg-blue-600 text-white text-xs px-2 py-1 rounded hover:bg-blue-700"
+                                        >
+                                            적용
+                                        </button>
+                                    </div>
+                                    <p className="text-[10px] text-slate-500 mt-1">
+                                        * 제품의 {targetNutrientType} 함량({(selectedProduct as any)[targetNutrientType]}%)을 기준으로 계산합니다.
+                                    </p>
+                                </div>
+                            )}
                         </div>
+                    </div>
+                    
+                    {/* Topdressing Input */}
+                    <div>
+                        <label className="block text-sm font-medium text-slate-700 mb-1">배토 두께 (mm) <span className="text-xs font-normal text-slate-400">(선택사항)</span></label>
+                        <input 
+                            type="number" 
+                            step="0.1"
+                            value={topdressing} 
+                            onChange={(e) => setTopdressing(e.target.value)}
+                            placeholder="예: 1.5"
+                            className="w-full p-2 border border-slate-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                        />
                     </div>
                 </div>
 
@@ -2351,6 +2561,7 @@ export default function TurfFertilizerApp() {
                             <div className="text-sm text-slate-600 mt-1 flex flex-wrap gap-x-4 gap-y-1">
                                 <span>면적: <span className="font-semibold">{entry.area}㎡</span></span>
                                 <span>사용량: <span className="font-semibold">{entry.applicationRate}{entry.applicationUnit}</span></span>
+                                {entry.topdressing && <span>배토: <span className="font-semibold text-stone-600">{entry.topdressing}mm</span></span>}
                                 <span>총 비용: <span className="font-semibold text-indigo-600">{Math.round(entry.totalCost).toLocaleString()}원</span></span>
                             </div>
                         </div>
