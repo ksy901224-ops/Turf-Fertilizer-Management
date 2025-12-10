@@ -838,11 +838,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             }
             // Clean up code blocks if present
             text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-            const data = JSON.parse(text);
+            const data: any = JSON.parse(text);
 
             if (Array.isArray(data)) {
                 // Handle Bulk Import List
-                const validList: Fertilizer[] = data.map(item => ({
+                const validList: Fertilizer[] = data.map((item: any) => ({
                      name: item.name || 'Unknown Product',
                      usage: ['그린', '티', '페어웨이'].includes(item.usage) ? item.usage : '그린',
                      type: item.type || '기타',
