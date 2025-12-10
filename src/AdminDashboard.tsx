@@ -783,7 +783,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         setIsAiFillLoading(true);
         setAiError(null);
         try {
-            const ai = new GoogleGenAI({ apiKey: (process.env.API_KEY as unknown as string) });
+            const ai = new GoogleGenAI({ apiKey: (process.env.API_KEY as string) });
             const groupsJSON = JSON.stringify(FERTILIZER_TYPE_GROUPS);
             
             const prompt = `
