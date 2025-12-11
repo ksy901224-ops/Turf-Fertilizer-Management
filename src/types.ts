@@ -2,7 +2,7 @@
 export interface Fertilizer {
   name: string;
   usage: '그린' | '티' | '페어웨이';
-  type: string; // Changed from strict union to string to support expanded categories
+  type: string;
   N: number;
   P: number;
   K: number;
@@ -57,7 +57,7 @@ export interface LogEntry {
     P?: number;
     K?: number;
   };
-  topdressing?: number; // Added: Depth in mm
+  topdressing?: number; // Depth in mm
 }
 
 export interface ChatMessage {

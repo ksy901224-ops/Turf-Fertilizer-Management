@@ -1,3 +1,4 @@
+
 import { Fertilizer, LogEntry, User, NotificationSettings, UserDataSummary } from './types';
 import { FERTILIZER_GUIDE } from './constants';
 import { db } from './firebase';
@@ -54,6 +55,7 @@ export const validateUser = async (username: string, password_provided: string):
 
         if (userSnap.exists()) {
             const user = userSnap.data() as User;
+            // In a real app, use hashed passwords.
             if (user.password === password_provided) {
                 if (username !== 'admin' && !user.isApproved) {
                     return 'pending';
@@ -138,7 +140,7 @@ export const deleteUser = async (username: string): Promise<void> => {
 // --- Data Functions (Firestore) ---
 
 // Helper to get raw data doc
-const getAppData = async (username: string) => {
+const getAppData = async (username: string): Promise<any> => {
     const docRef = doc(db, "appData", username);
     const docSnap = await getDoc(docRef);
     return docSnap.exists() ? docSnap.data() : null;
