@@ -42,7 +42,7 @@ export interface NutrientLog {
   [key: string]: number;
 }
 
-export interface LogEntry {topdrssing}
+export interface LogEntry {
   id: string;
   date: string;
   product: string;
