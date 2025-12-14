@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { GoogleGenAI } from '@google/genai';
@@ -1255,7 +1254,7 @@ export default function TurfFertilizerApp() {
         contents: fullPrompt,
       });
 
-      let text = response.text;
+      let text = response.text || '';
       
       // Parse JSON Action with robust regex
       // Tries to find ```json ... ``` first, then falls back to finding the first { ... } block
@@ -1364,7 +1363,7 @@ export default function TurfFertilizerApp() {
       }
   };
 
-  const formattedAiResponse = useMemo(() => {
+  const formattedAiResponse = useMemo<string>(() => {
     if (!aiResponse) return '';
     
     let html = aiResponse
@@ -2473,7 +2472,7 @@ export default function TurfFertilizerApp() {
             {aiResponse && (
                 <div className="w-full text-left mt-6 animate-fadeIn">
                     <div className="bg-purple-50 border border-purple-200 rounded-xl p-6 shadow-sm">
-                        <div className="prose prose-sm sm:prose max-w-none text-slate-700 mb-6" dangerouslySetInnerHTML={{ __html: formattedAiResponse as string }} />
+                        <div className="prose prose-sm sm:prose max-w-none text-slate-700 mb-6" dangerouslySetInnerHTML={{ __html: formattedAiResponse }} />
                         
                         {aiAction && (
                             <div className="bg-white border-l-4 border-purple-600 p-4 rounded-r-lg shadow-sm">

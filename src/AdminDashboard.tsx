@@ -1,10 +1,10 @@
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import * as api from './api';
 import * as XLSX from 'xlsx';
 import { GoogleGenAI } from '@google/genai';
 import { UserDataSummary, Fertilizer, LogEntry } from './types';
-import { LogoutIcon, DashboardIcon, UsersIcon, PlusIcon, TrashIcon, CloseIcon, ClipboardListIcon, CameraIcon, DocumentSearchIcon, UploadIcon, SparklesIcon, DownloadIcon, PencilIcon } from './icons';
+import { LogoutIcon, DashboardIcon, UsersIcon, PlusIcon, TrashIcon, CloseIcon, ClipboardListIcon, SparklesIcon, DownloadIcon, PencilIcon, UploadIcon } from './icons';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { FERTILIZER_TYPE_GROUPS } from './constants';
 
@@ -663,8 +663,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
     const handleBulkApprove = async () => {
         if (selectedPendingUsers.size === 0) return;
         if (window.confirm(`선택한 ${selectedPendingUsers.size}명의 사용자를 일괄 승인하시겠습니까?`)) {
-            const users = Array.from(selectedPendingUsers) as string[];
-            for (const username of users) {
+            for (const username of Array.from(selectedPendingUsers)) {
                 await api.approveUser(username);
             }
             setSelectedPendingUsers(new Set());
@@ -675,8 +674,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
     const handleBulkReject = async () => {
         if (selectedPendingUsers.size === 0) return;
         if (window.confirm(`선택한 ${selectedPendingUsers.size}명의 사용자를 일괄 거절(삭제)하시겠습니까?`)) {
-            const users = Array.from(selectedPendingUsers) as string[];
-            for (const username of users) {
+            for (const username of Array.from(selectedPendingUsers)) {
                 await api.deleteUser(username);
             }
             setSelectedPendingUsers(new Set());
@@ -840,11 +838,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             }
             // Clean up code blocks if present
             text = text.replace(/```json/g, '').replace(/```/g, '').trim();
-            const data: any = JSON.parse(text);
+            const data = JSON.parse(text);
 
             if (Array.isArray(data)) {
                 // Handle Bulk Import List
-                const validList: Fertilizer[] = data.map((item: any) => ({
+                const validList: Fertilizer[] = data.map(item => ({
                      name: item.name || 'Unknown Product',
                      usage: ['그린', '티', '페어웨이'].includes(item.usage) ? item.usage : '그린',
                      type: item.type || '기타',
@@ -887,10 +885,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 }
             }
             
-        } catch (e: any) {
+        } catch (e) {
             console.error("AI Fill Error:", e);
-            const errorMessage = e instanceof Error ? e.message : "분석에 실패했습니다. 올바른 데이터인지 확인해주세요.";
-            setAiError(errorMessage);
+            setAiError("분석에 실패했습니다. 올바른 데이터인지 확인해주세요.");
         } finally {
             setIsAiFillLoading(false);
         }
