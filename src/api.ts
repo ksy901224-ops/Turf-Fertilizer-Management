@@ -2,7 +2,7 @@
 import { Fertilizer, LogEntry, User, NotificationSettings, UserDataSummary } from './types';
 import { FERTILIZER_GUIDE } from './constants';
 import { db } from './firebase';
-import { doc, getDoc, setDoc, updateDoc, collection, getDocs, deleteDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, collection, getDocs, deleteDoc, onSnapshot, Unsubscribe } from 'firebase/firestore';
 
 // --- Helper Functions ---
 
@@ -16,7 +16,7 @@ const initialFertilizers: Fertilizer[] = [
 ];
 
 // Ensure 'admin' exists in Firestore
-const seedAdminIfNeeded = async () => {
+export const seedAdminIfNeeded = async () => {
     try {
         const adminRef = doc(db, "users", "admin");
         const adminSnap = await getDoc(adminRef);
@@ -137,38 +137,80 @@ export const deleteUser = async (username: string): Promise<void> => {
     }
 };
 
-// --- Data Functions (Firestore) ---
+// --- Data Functions (Firestore & Real-time) ---
 
-// Helper to get raw data doc
-const getAppData = async (username: string): Promise<any> => {
+export interface UserSettings {
+    greenArea: string;
+    teeArea: string;
+    fairwayArea: string;
+    selectedGuide: string;
+    manualPlanMode?: boolean;
+    manualTargets?: { [area: string]: { N: number, P: number, K: number }[] };
+    fairwayGuideType?: 'KBG' | 'Zoysia';
+}
+
+interface AppData {
+    logs: LogEntry[];
+    fertilizers: Fertilizer[];
+    settings: UserSettings;
+    notificationSettings: NotificationSettings;
+}
+
+// Subscribe to a specific user's App Data
+export const subscribeToAppData = (username: string, onUpdate: (data: Partial<AppData> | null) => void): Unsubscribe => {
+    const docRef = doc(db, "appData", username);
+    return onSnapshot(docRef, (docSnap) => {
+        if (docSnap.exists()) {
+            onUpdate(docSnap.data() as Partial<AppData>);
+        } else {
+            onUpdate(null);
+        }
+    }, (error) => {
+        console.error("Error subscribing to app data:", error);
+    });
+};
+
+// Subscribe to the users collection (for Admin)
+export const subscribeToUsers = (onUpdate: (users: User[]) => void): Unsubscribe => {
+    const colRef = collection(db, "users");
+    return onSnapshot(colRef, (snapshot) => {
+        const users = snapshot.docs.map(d => d.data() as User);
+        onUpdate(users);
+    }, (error) => {
+        console.error("Error subscribing to users:", error);
+    });
+};
+
+// Subscribe to all app data (for Admin aggregation)
+export const subscribeToAllAppData = (onUpdate: (data: Record<string, Partial<AppData>>) => void): Unsubscribe => {
+    const colRef = collection(db, "appData");
+    return onSnapshot(colRef, (snapshot) => {
+        const data: Record<string, Partial<AppData>> = {};
+        snapshot.forEach(doc => {
+            data[doc.id] = doc.data() as Partial<AppData>;
+        });
+        onUpdate(data);
+    }, (error) => {
+        console.error("Error subscribing to all app data:", error);
+    });
+};
+
+// --- Save Functions (Actions) ---
+
+export const getFertilizers = async (username: string): Promise<Fertilizer[]> => {
+    // Legacy support or direct fetch if needed, but subscriptions preferred
+    await seedAdminIfNeeded();
     try {
         const docRef = doc(db, "appData", username);
         const docSnap = await getDoc(docRef);
-        if (docSnap.exists()) {
-            return docSnap.data();
+        const fertilizers = docSnap.exists() ? docSnap.data().fertilizers : [];
+        if (username === 'admin' && (!fertilizers || fertilizers.length === 0)) {
+            return initialFertilizers;
         }
-        return { logs: [], fertilizers: [], settings: {}, notificationSettings: { enabled: false, email: '', threshold: 10 } };
-    } catch (e) {
-        console.error("Get App Data error", e);
-        return null;
+        return fertilizers || [];
+    } catch {
+        return [];
     }
-};
-
-export const getFertilizers = async (username: string): Promise<Fertilizer[]> => {
-    await seedAdminIfNeeded();
-    const data = await getAppData(username);
-    const fertilizers = data?.fertilizers || [];
-
-    // If 'admin' list is requested and empty, return initial
-    if (username === 'admin' && fertilizers.length === 0) {
-        return initialFertilizers;
-    }
-
-    return fertilizers.map((item: any) => ({
-        ...item,
-        stock: item.stock ?? 0,
-        lowStockAlertEnabled: item.lowStockAlertEnabled ?? false,
-    }));
 };
 
 export const saveFertilizers = async (username: string, fertilizers: Fertilizer[]): Promise<void> => {
@@ -184,8 +226,13 @@ export const saveFertilizers = async (username: string, fertilizers: Fertilizer[
 };
 
 export const getLog = async (username: string): Promise<LogEntry[]> => {
-    const data = await getAppData(username);
-    return data?.logs || [];
+    try {
+        const docRef = doc(db, "appData", username);
+        const docSnap = await getDoc(docRef);
+        return docSnap.exists() ? docSnap.data().logs || [] : [];
+    } catch {
+        return [];
+    }
 };
 
 export const saveLog = async (username: string, log: LogEntry[]): Promise<void> => {
@@ -198,51 +245,14 @@ export const saveLog = async (username: string, log: LogEntry[]): Promise<void> 
     }
 };
 
-export interface UserSettings {
-    greenArea: string;
-    teeArea: string;
-    fairwayArea: string;
-    selectedGuide: string;
-    manualPlanMode?: boolean;
-    manualTargets?: { [area: string]: { N: number, P: number, K: number }[] };
-    fairwayGuideType?: 'KBG' | 'Zoysia';
-}
-
 export const getSettings = async (username: string): Promise<UserSettings> => {
-    const defaultManualTargets = {
-        '그린': Array(12).fill({ N: 0, P: 0, K: 0 }),
-        '티': Array(12).fill({ N: 0, P: 0, K: 0 }),
-        '페어웨이': Array(12).fill({ N: 0, P: 0, K: 0 }),
-    };
-    
-    const defaultSettings = {
-        greenArea: '',
-        teeArea: '',
-        fairwayArea: '',
-        selectedGuide: Object.keys(FERTILIZER_GUIDE)[0],
-        manualPlanMode: false,
-        manualTargets: defaultManualTargets,
-        fairwayGuideType: 'KBG'
-    };
-
-    const data = await getAppData(username);
-    const userSettings = data?.settings;
-
-    if (userSettings) {
-         let manualTargets = userSettings.manualTargets;
-         if (Array.isArray(manualTargets)) {
-             manualTargets = {
-                 '그린': manualTargets,
-                 '티': [...defaultManualTargets['티']],
-                 '페어웨이': [...defaultManualTargets['페어웨이']],
-             };
-         } else if (!manualTargets) {
-             manualTargets = defaultManualTargets;
-         }
-         return { ...userSettings, manualTargets } as UserSettings;
+    try {
+        const docRef = doc(db, "appData", username);
+        const docSnap = await getDoc(docRef);
+        return docSnap.exists() ? docSnap.data().settings || {} : {};
+    } catch {
+        return {} as UserSettings;
     }
-    
-    return defaultSettings as UserSettings;
 };
 
 export const saveSettings = async (username: string, settings: UserSettings): Promise<void> => {
@@ -255,25 +265,8 @@ export const saveSettings = async (username: string, settings: UserSettings): Pr
     }
 };
 
-export const getNotificationSettings = async (username: string): Promise<NotificationSettings> => {
-    const data = await getAppData(username);
-    if (data?.notificationSettings) {
-        return data.notificationSettings;
-    }
-    return { enabled: false, email: '', threshold: 10 };
-};
-
-export const saveNotificationSettings = async (username: string, settings: NotificationSettings): Promise<void> => {
-    try {
-        const docRef = doc(db, "appData", username);
-        await updateDoc(docRef, { notificationSettings: settings });
-    } catch (e) {
-        const docRef = doc(db, "appData", username);
-        await setDoc(docRef, { notificationSettings: settings }, { merge: true });
-    }
-};
-
 export const getAllUsersData = async (): Promise<UserDataSummary[]> => {
+    // Legacy support, Admin Dashboard now uses real-time listeners
     try {
         const usersCol = collection(db, "users");
         const userSnapshot = await getDocs(usersCol);
@@ -285,7 +278,9 @@ export const getAllUsersData = async (): Promise<UserDataSummary[]> => {
             
             if (username === 'admin') continue;
 
-            const appData = await getAppData(username);
+            const docRef = doc(db, "appData", username);
+            const appDataSnap = await getDoc(docRef);
+            const appData = appDataSnap.exists() ? appDataSnap.data() : null;
             const logs = appData?.logs || [];
             const fertilizers = appData?.fertilizers || [];
             
