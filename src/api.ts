@@ -141,9 +141,17 @@ export const deleteUser = async (username: string): Promise<void> => {
 
 // Helper to get raw data doc
 const getAppData = async (username: string): Promise<any> => {
-    const docRef = doc(db, "appData", username);
-    const docSnap = await getDoc(docRef);
-    return docSnap.exists() ? docSnap.data() : null;
+    try {
+        const docRef = doc(db, "appData", username);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+            return docSnap.data();
+        }
+        return { logs: [], fertilizers: [], settings: {}, notificationSettings: { enabled: false, email: '', threshold: 10 } };
+    } catch (e) {
+        console.error("Get App Data error", e);
+        return null;
+    }
 };
 
 export const getFertilizers = async (username: string): Promise<Fertilizer[]> => {
@@ -151,6 +159,7 @@ export const getFertilizers = async (username: string): Promise<Fertilizer[]> =>
     const data = await getAppData(username);
     const fertilizers = data?.fertilizers || [];
 
+    // If 'admin' list is requested and empty, return initial
     if (username === 'admin' && fertilizers.length === 0) {
         return initialFertilizers;
     }
@@ -163,8 +172,15 @@ export const getFertilizers = async (username: string): Promise<Fertilizer[]> =>
 };
 
 export const saveFertilizers = async (username: string, fertilizers: Fertilizer[]): Promise<void> => {
-    const docRef = doc(db, "appData", username);
-    await setDoc(docRef, { fertilizers }, { merge: true });
+    try {
+        const docRef = doc(db, "appData", username);
+        await updateDoc(docRef, { fertilizers });
+    } catch (e) {
+        // If doc doesn't exist (edge case), try setting it
+        console.warn("Update failed, trying set for fertilizers", e);
+        const docRef = doc(db, "appData", username);
+        await setDoc(docRef, { fertilizers }, { merge: true });
+    }
 };
 
 export const getLog = async (username: string): Promise<LogEntry[]> => {
@@ -173,8 +189,13 @@ export const getLog = async (username: string): Promise<LogEntry[]> => {
 };
 
 export const saveLog = async (username: string, log: LogEntry[]): Promise<void> => {
-    const docRef = doc(db, "appData", username);
-    await setDoc(docRef, { logs: log }, { merge: true });
+    try {
+        const docRef = doc(db, "appData", username);
+        await updateDoc(docRef, { logs: log });
+    } catch (e) {
+        const docRef = doc(db, "appData", username);
+        await setDoc(docRef, { logs: log }, { merge: true });
+    }
 };
 
 export interface UserSettings {
@@ -209,7 +230,6 @@ export const getSettings = async (username: string): Promise<UserSettings> => {
 
     if (userSettings) {
          let manualTargets = userSettings.manualTargets;
-         // Handle migration or data fix if needed
          if (Array.isArray(manualTargets)) {
              manualTargets = {
                  '그린': manualTargets,
@@ -226,8 +246,13 @@ export const getSettings = async (username: string): Promise<UserSettings> => {
 };
 
 export const saveSettings = async (username: string, settings: UserSettings): Promise<void> => {
-    const docRef = doc(db, "appData", username);
-    await setDoc(docRef, { settings }, { merge: true });
+    try {
+        const docRef = doc(db, "appData", username);
+        await updateDoc(docRef, { settings });
+    } catch (e) {
+        const docRef = doc(db, "appData", username);
+        await setDoc(docRef, { settings }, { merge: true });
+    }
 };
 
 export const getNotificationSettings = async (username: string): Promise<NotificationSettings> => {
@@ -239,44 +264,52 @@ export const getNotificationSettings = async (username: string): Promise<Notific
 };
 
 export const saveNotificationSettings = async (username: string, settings: NotificationSettings): Promise<void> => {
-    const docRef = doc(db, "appData", username);
-    await setDoc(docRef, { notificationSettings: settings }, { merge: true });
+    try {
+        const docRef = doc(db, "appData", username);
+        await updateDoc(docRef, { notificationSettings: settings });
+    } catch (e) {
+        const docRef = doc(db, "appData", username);
+        await setDoc(docRef, { notificationSettings: settings }, { merge: true });
+    }
 };
 
 export const getAllUsersData = async (): Promise<UserDataSummary[]> => {
-    await delay();
-    const usersCol = collection(db, "users");
-    const usersSnapshot = await getDocs(usersCol);
-    
-    const allData: UserDataSummary[] = [];
+    try {
+        const usersCol = collection(db, "users");
+        const userSnapshot = await getDocs(usersCol);
+        const allData: UserDataSummary[] = [];
 
-    for (const userDoc of usersSnapshot.docs) {
-        const username = userDoc.id;
-        if (username === 'admin') continue;
-        
-        const user = userDoc.data() as User;
-        const appData = await getAppData(username) || { logs: [], fertilizers: [] };
-        
-        const logs = appData.logs || [];
-        const fertilizers = appData.fertilizers || [];
-        
-        const totalCost = logs.reduce((sum: number, entry: LogEntry) => sum + (entry.totalCost || 0), 0);
-        
-        let lastActivity: string | null = null;
-        if (logs.length > 0) {
-            lastActivity = [...logs].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].date;
+        for (const userDoc of userSnapshot.docs) {
+            const userData = userDoc.data() as User;
+            const username = userData.username;
+            
+            if (username === 'admin') continue;
+
+            const appData = await getAppData(username);
+            const logs = appData?.logs || [];
+            const fertilizers = appData?.fertilizers || [];
+            
+            const totalCost = logs.reduce((sum: number, entry: LogEntry) => sum + (entry.totalCost || 0), 0);
+            
+            let lastActivity: string | null = null;
+            if (logs.length > 0) {
+                lastActivity = [...logs].sort((a: LogEntry, b: LogEntry) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].date;
+            }
+
+            allData.push({
+                username: userData.username,
+                golfCourse: userData.golfCourse || '미지정',
+                logCount: logs.length,
+                totalCost,
+                lastActivity,
+                logs: [...logs].sort((a: LogEntry, b: LogEntry) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+                fertilizers,
+                isApproved: userData.isApproved ?? true,
+            });
         }
-
-        allData.push({
-            username: user.username,
-            golfCourse: user.golfCourse || '미지정',
-            logCount: logs.length,
-            totalCost,
-            lastActivity,
-            logs: [...logs].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()),
-            fertilizers,
-            isApproved: user.isApproved ?? true,
-        });
+        return allData;
+    } catch (e) {
+        console.error("Get All Users Data error", e);
+        return [];
     }
-    return allData;
 };
