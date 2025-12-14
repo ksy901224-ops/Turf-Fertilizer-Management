@@ -663,8 +663,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
     const handleBulkApprove = async () => {
         if (selectedPendingUsers.size === 0) return;
         if (window.confirm(`선택한 ${selectedPendingUsers.size}명의 사용자를 일괄 승인하시겠습니까?`)) {
-            const users = Array.from(selectedPendingUsers) as string[];
-            for (const username of users) {
+            for (const username of Array.from(selectedPendingUsers)) {
                 await api.approveUser(username);
             }
             setSelectedPendingUsers(new Set());
@@ -675,8 +674,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
     const handleBulkReject = async () => {
         if (selectedPendingUsers.size === 0) return;
         if (window.confirm(`선택한 ${selectedPendingUsers.size}명의 사용자를 일괄 거절(삭제)하시겠습니까?`)) {
-            const users = Array.from(selectedPendingUsers) as string[];
-            for (const username of users) {
+            for (const username of Array.from(selectedPendingUsers)) {
                 await api.deleteUser(username);
             }
             setSelectedPendingUsers(new Set());

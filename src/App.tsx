@@ -2477,4 +2477,148 @@ export default function TurfFertilizerApp() {
                         
                         {aiAction && (
                             <div className="bg-white border-l-4 border-purple-600 p-4 rounded-r-lg shadow-sm">
-                                <h4 className="font-bold text-purple-800 mb-2 flex items-center
+                                <h4 className="font-bold text-purple-800 mb-2 flex items-center gap-2">
+                                    🚀 AI 빠른 실행 제안
+                                </h4>
+                                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                                    <div>
+                                        <p className="text-sm text-slate-600 mb-1">
+                                            <span className="font-semibold text-slate-800">{aiAction.targetArea}</span> 구역에 
+                                            <span className="font-semibold text-slate-800 mx-1">{aiAction.productName}</span>을(를) 
+                                            <span className="font-bold text-purple-600 mx-1">{aiAction.rate}g/㎡</span> 시비하세요.
+                                        </p>
+                                        <p className="text-xs text-slate-500">{aiAction.reason}</p>
+                                    </div>
+                                    <button 
+                                        onClick={handleApplyAiAction}
+                                        className="px-4 py-2 bg-purple-600 text-white text-sm font-bold rounded-lg hover:bg-purple-700 transition shadow-sm whitespace-nowrap"
+                                    >
+                                        일지에 적용하기
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+        </section>
+
+        {/* Log List Section */}
+        <section className="space-y-4">
+             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <h2 className="text-xl font-semibold text-slate-700 flex items-center gap-2">
+                    <ClipboardListIcon /> 시비 일지 기록 ({sortedAndFilteredLog.length})
+                </h2>
+                <div className="flex gap-2">
+                    <button onClick={handleExportToExcel} className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white text-sm font-semibold rounded-md hover:bg-green-700 transition-colors shadow-sm">
+                        <DownloadIcon /> 엑셀 다운로드
+                    </button>
+                </div>
+            </div>
+
+            {/* Filters */}
+            <div className="bg-white p-4 rounded-lg shadow-sm border border-slate-200">
+                <div className="flex flex-col sm:flex-row gap-4 text-sm">
+                    <div className="flex-1">
+                        <label className="block text-xs text-slate-500 mb-1">날짜 범위</label>
+                        <div className="flex gap-2 items-center">
+                            <input type="date" value={filterStartDate} onChange={(e) => setFilterStartDate(e.target.value)} className="p-2 border rounded w-full" />
+                            <span>~</span>
+                            <input type="date" value={filterEndDate} onChange={(e) => setFilterEndDate(e.target.value)} className="p-2 border rounded w-full" />
+                        </div>
+                    </div>
+                    <div className="flex-1">
+                        <label className="block text-xs text-slate-500 mb-1">제품명 검색</label>
+                        <input type="text" placeholder="제품명..." value={filterProduct} onChange={(e) => setFilterProduct(e.target.value)} className="p-2 border rounded w-full" />
+                    </div>
+                    <div className="flex-1">
+                         <label className="block text-xs text-slate-500 mb-1">정렬</label>
+                         <div className="flex gap-2">
+                            <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} className="p-2 border rounded w-full bg-white">
+                                <option value="date-desc">최신순</option>
+                                <option value="date-asc">오래된순</option>
+                                <option value="area">면적순</option>
+                                <option value="product">제품명순</option>
+                            </select>
+                            <button onClick={handleResetFilters} className="px-3 py-2 bg-slate-100 text-slate-600 rounded hover:bg-slate-200">초기화</button>
+                         </div>
+                    </div>
+                </div>
+            </div>
+
+            <div className="space-y-4">
+                {sortedAndFilteredLog.length > 0 ? (
+                    sortedAndFilteredLog.map((entry) => (
+                    <div key={entry.id} className="bg-white p-5 rounded-lg shadow-md border-l-4 border-indigo-500 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 hover:shadow-lg transition-shadow">
+                        <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-1">
+                                <span className="text-sm font-bold text-slate-500">{entry.date}</span>
+                                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${
+                                    entry.usage === '그린' ? 'bg-green-100 text-green-800' :
+                                    entry.usage === '티' ? 'bg-blue-100 text-blue-800' :
+                                    'bg-orange-100 text-orange-800'
+                                }`}>{entry.usage}</span>
+                            </div>
+                            <h3 className="text-lg font-bold text-slate-800">{entry.product}</h3>
+                            <div className="text-sm text-slate-600 mt-1 flex flex-wrap gap-x-4 gap-y-1">
+                                <span>면적: <span className="font-semibold">{entry.area}㎡</span></span>
+                                <span>사용량: <span className="font-semibold">{entry.applicationRate}{entry.applicationUnit}</span></span>
+                                {entry.topdressing && <span>배토: <span className="font-semibold text-stone-600">{entry.topdressing}mm</span></span>}
+                                <span>총 비용: <span className="font-semibold text-indigo-600">{Math.round(entry.totalCost).toLocaleString()}원</span></span>
+                            </div>
+                        </div>
+                        
+                        {/* Mini Nutrient Badge */}
+                        <div className="flex gap-2 text-xs font-mono bg-slate-50 p-2 rounded border">
+                            {NUTRIENTS.slice(0, 3).map(n => (
+                                <div key={n} className="text-center px-1">
+                                    <span className="block text-slate-400 text-[10px]">{n}</span>
+                                    <span className={`font-bold ${n==='N'?'text-green-600':n==='P'?'text-blue-600':'text-orange-600'}`}>
+                                        {entry.nutrients[n]?.toFixed(1)}
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
+
+                        <button 
+                            onClick={() => removeLogEntry(entry.id)} 
+                            className="text-slate-400 hover:text-red-500 p-2 rounded-full hover:bg-red-50 transition-colors"
+                            title="삭제"
+                        >
+                            <TrashIcon />
+                        </button>
+                    </div>
+                ))
+                ) : (
+                    <div className="text-center py-12 bg-white rounded-lg shadow-sm border border-dashed">
+                        <ClipboardListIcon className="h-12 w-12 mx-auto text-slate-300 mb-3" />
+                        <p className="text-slate-500">기록된 시비 일지가 없습니다.</p>
+                    </div>
+                )}
+            </div>
+        </section>
+
+        {/* Floating Chat Button */}
+        <button
+            onClick={() => setIsChatOpen(true)}
+            className="fixed bottom-6 right-6 bg-purple-600 hover:bg-purple-700 text-white p-4 rounded-full shadow-lg transition-transform hover:scale-110 z-50"
+            aria-label="Open Chatbot"
+        >
+            <ChatIcon />
+        </button>
+        
+        {/* Chatbot Modal */}
+        <Chatbot isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />
+      </div>
+      
+      {/* Fertilizer Detail Modal */}
+      {detailModalFertilizer && (
+        <FertilizerDetailModal 
+            fertilizer={detailModalFertilizer} 
+            onClose={() => setDetailModalFertilizer(null)} 
+        />
+      )}
+      
+    </div>
+  );
+}
