@@ -2,7 +2,7 @@
 import { Fertilizer, LogEntry, User, NotificationSettings, UserDataSummary } from './types';
 import { FERTILIZER_GUIDE } from './constants';
 import { db } from './firebase';
-import { doc, getDoc, setDoc, updateDoc, collection, getDocs, deleteDoc, onSnapshot, Unsubscribe } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, collection, getDocs, deleteDoc, onSnapshot, Unsubscribe, QuerySnapshot, DocumentData } from 'firebase/firestore';
 
 // --- Helper Functions ---
 
@@ -149,6 +149,21 @@ export interface UserSettings {
     fairwayGuideType?: 'KBG' | 'Zoysia';
 }
 
+// Define Default Settings to ensure type safety
+const DEFAULT_USER_SETTINGS: UserSettings = {
+    greenArea: '',
+    teeArea: '',
+    fairwayArea: '',
+    selectedGuide: Object.keys(FERTILIZER_GUIDE)[0] || '난지형잔디 (한국잔디)',
+    manualPlanMode: false,
+    manualTargets: {
+        '그린': Array(12).fill({ N: 0, P: 0, K: 0 }),
+        '티': Array(12).fill({ N: 0, P: 0, K: 0 }),
+        '페어웨이': Array(12).fill({ N: 0, P: 0, K: 0 }),
+    },
+    fairwayGuideType: 'KBG'
+};
+
 interface AppData {
     logs: LogEntry[];
     fertilizers: Fertilizer[];
@@ -161,7 +176,12 @@ export const subscribeToAppData = (username: string, onUpdate: (data: Partial<Ap
     const docRef = doc(db, "appData", username);
     return onSnapshot(docRef, (docSnap) => {
         if (docSnap.exists()) {
-            onUpdate(docSnap.data() as Partial<AppData>);
+            const data = docSnap.data() as Partial<AppData>;
+            // Ensure settings has defaults if missing
+            if (data.settings) {
+                data.settings = { ...DEFAULT_USER_SETTINGS, ...data.settings };
+            }
+            onUpdate(data);
         } else {
             onUpdate(null);
         }
@@ -173,7 +193,7 @@ export const subscribeToAppData = (username: string, onUpdate: (data: Partial<Ap
 // Subscribe to the users collection (for Admin)
 export const subscribeToUsers = (onUpdate: (users: User[]) => void): Unsubscribe => {
     const colRef = collection(db, "users");
-    return onSnapshot(colRef, (snapshot) => {
+    return onSnapshot(colRef, (snapshot: QuerySnapshot<DocumentData>) => {
         const users = snapshot.docs.map(d => d.data() as User);
         onUpdate(users);
     }, (error) => {
@@ -184,7 +204,7 @@ export const subscribeToUsers = (onUpdate: (users: User[]) => void): Unsubscribe
 // Subscribe to all app data (for Admin aggregation)
 export const subscribeToAllAppData = (onUpdate: (data: Record<string, Partial<AppData>>) => void): Unsubscribe => {
     const colRef = collection(db, "appData");
-    return onSnapshot(colRef, (snapshot) => {
+    return onSnapshot(colRef, (snapshot: QuerySnapshot<DocumentData>) => {
         const data: Record<string, Partial<AppData>> = {};
         snapshot.forEach(doc => {
             data[doc.id] = doc.data() as Partial<AppData>;
@@ -203,7 +223,7 @@ export const getFertilizers = async (username: string): Promise<Fertilizer[]> =>
     try {
         const docRef = doc(db, "appData", username);
         const docSnap = await getDoc(docRef);
-        const fertilizers = docSnap.exists() ? docSnap.data().fertilizers : [];
+        const fertilizers = docSnap.exists() ? (docSnap.data() as AppData).fertilizers : [];
         if (username === 'admin' && (!fertilizers || fertilizers.length === 0)) {
             return initialFertilizers;
         }
@@ -229,7 +249,7 @@ export const getLog = async (username: string): Promise<LogEntry[]> => {
     try {
         const docRef = doc(db, "appData", username);
         const docSnap = await getDoc(docRef);
-        return docSnap.exists() ? docSnap.data().logs || [] : [];
+        return docSnap.exists() ? (docSnap.data() as AppData).logs || [] : [];
     } catch {
         return [];
     }
@@ -249,9 +269,16 @@ export const getSettings = async (username: string): Promise<UserSettings> => {
     try {
         const docRef = doc(db, "appData", username);
         const docSnap = await getDoc(docRef);
-        return docSnap.exists() ? docSnap.data().settings || {} : {};
-    } catch {
-        return {} as UserSettings;
+        
+        if (docSnap.exists()) {
+            const data = (docSnap.data() as AppData).settings;
+            // Merge retrieved data with default settings to ensure all required fields exist
+            return { ...DEFAULT_USER_SETTINGS, ...data };
+        }
+        return DEFAULT_USER_SETTINGS;
+    } catch (e) {
+        console.error("Error getting settings:", e);
+        return DEFAULT_USER_SETTINGS;
     }
 };
 
@@ -280,7 +307,7 @@ export const getAllUsersData = async (): Promise<UserDataSummary[]> => {
 
             const docRef = doc(db, "appData", username);
             const appDataSnap = await getDoc(docRef);
-            const appData = appDataSnap.exists() ? appDataSnap.data() : null;
+            const appData = appDataSnap.exists() ? (appDataSnap.data() as AppData) : null;
             const logs = appData?.logs || [];
             const fertilizers = appData?.fertilizers || [];
             
