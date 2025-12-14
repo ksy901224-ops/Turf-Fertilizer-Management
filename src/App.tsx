@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { GoogleGenAI } from '@google/genai';
@@ -10,7 +9,8 @@ import { Chatbot } from './Chatbot';
 import { ChatIcon, LogoutIcon, CalculatorIcon, TrashIcon, CalendarIcon, ClipboardListIcon, CloseIcon, PencilIcon, PlusIcon, SparklesIcon, ChevronDownIcon, ChevronUpIcon, CameraIcon, DocumentSearchIcon, UploadIcon, DownloadIcon } from './icons';
 import { Login } from './Login';
 import { AdminDashboard } from './AdminDashboard';
-
+import { FertilizerDetailModal } from './FertilizerDetailModal';
+import { getApplicationDetails, parseRateValue } from './utils';
 
 const LoadingSpinner = () => (
     <div className="flex justify-center items-center min-h-screen bg-slate-100">
@@ -20,335 +20,6 @@ const LoadingSpinner = () => (
         </div>
     </div>
 );
-
-// --- Helper Functions (Moved to Module Scope for Reusability) ---
-
-const parseRateValue = (rateStr: string) => {
-    if (!rateStr) return 0;
-    const m = rateStr.toString().match(/([0-9]+(\.[0-9]+)?)/);
-    return m ? parseFloat(m[0]) : 0;
-};
-
-const getApplicationDetails = (product: Fertilizer | null, areaNum: number, rateNum: number) => {
-    const ZEROS = {
-        nutrients: NUTRIENTS.reduce((acc, n) => ({...acc, [n]: 0}), {} as {[key:string]:number}),
-        totalCost: 0,
-        nutrientCosts: {},
-    };
-
-    if (!product || !isFinite(areaNum) || areaNum <= 0 || !isFinite(rateNum) || rateNum < 0) {
-        return ZEROS;
-    }
-
-    const density = product.density ?? 1;
-    const concentration = product.concentration ?? 0;
-    const price = product.price || 0;
-
-    const isLiquidRate = (product.rate || '').toLowerCase().includes('ml') || product.type === '액상';
-    
-    const totalGramsApplied = isLiquidRate
-        ? rateNum * areaNum * density
-        : rateNum * areaNum;
-
-    if (!isFinite(totalGramsApplied)) return ZEROS;
-
-    const nutrientCarrierGrams = (isLiquidRate && concentration > 0)
-        ? totalGramsApplied * (concentration / 100)
-        : totalGramsApplied;
-    
-    if (!isFinite(nutrientCarrierGrams)) return ZEROS;
-
-    const nutrients = NUTRIENTS.reduce((acc, n) => {
-        const percentage = (product as any)[n] || 0;
-        const nutrientGrams = (percentage / 100) * nutrientCarrierGrams;
-        acc[n] = isFinite(nutrientGrams) ? Number(nutrientGrams.toFixed(3)) : 0;
-        return acc;
-    }, {} as {[key:string]:number});
-    
-    let totalCost = 0;
-    const packageSize = parseFloat((product.unit || '').replace(/[^0-9.]/g, ''));
-
-    if (isFinite(packageSize) && packageSize > 0) {
-        const isLiquidUnit = (product.unit || '').toLowerCase().includes('l');
-        const packageWeightKg = isLiquidUnit 
-            ? packageSize * density
-            : packageSize;
-
-        if (isFinite(packageWeightKg) && packageWeightKg > 0) {
-            const costPerKg = price / packageWeightKg;
-            const totalKgApplied = totalGramsApplied / 1000;
-            const finalCost = totalKgApplied * costPerKg;
-            totalCost = isFinite(finalCost) ? finalCost : 0;
-        }
-    }
-
-    const nutrientCosts: {[key: string]: number} = {};
-    if (isFinite(price) && price > 0 && isFinite(packageSize) && packageSize > 0) {
-        const isLiquidUnit = (product.unit || '').toLowerCase().includes('l');
-        const totalPackageGrams = isLiquidUnit 
-            ? packageSize * density * 1000 
-            : packageSize * 1000;
-
-        if (isFinite(totalPackageGrams) && totalPackageGrams > 0) {
-            ['N', 'P', 'K'].forEach(nutrient => {
-                const percentage = (product as any)[nutrient] || 0;
-                if (percentage > 0) {
-                    const totalNutrientGramsInPackage = totalPackageGrams * (percentage / 100);
-                    if (totalNutrientGramsInPackage > 0) {
-                        nutrientCosts[nutrient] = price / totalNutrientGramsInPackage;
-                    }
-                }
-            });
-        }
-    }
-
-    return { nutrients, totalCost, nutrientCosts };
-};
-
-// --- Fertilizer Detail Modal Component ---
-
-interface FertilizerDetailModalProps {
-    fertilizer: Fertilizer;
-    onClose: () => void;
-}
-
-const FertilizerDetailModal: React.FC<FertilizerDetailModalProps> = ({ fertilizer, onClose }) => {
-    const [activeTab, setActiveTab] = useState<'info' | 'calc'>('info');
-    const [calcArea, setCalcArea] = useState<string>('');
-    const [calcRate, setCalcRate] = useState<string>('');
-
-    useEffect(() => {
-        const defaultRate = parseRateValue(fertilizer.rate);
-        if (defaultRate > 0) setCalcRate(defaultRate.toString());
-    }, [fertilizer]);
-
-    const details = useMemo(() => {
-        const defaultRate = parseRateValue(fertilizer.rate);
-        return getApplicationDetails(fertilizer, 1, defaultRate); // Per 1m² analysis
-    }, [fertilizer]);
-
-    const calcResult = useMemo(() => {
-        const area = parseFloat(calcArea);
-        const rate = parseFloat(calcRate);
-        if (isNaN(area) || area <= 0 || isNaN(rate) || rate < 0) return null;
-        
-        const result = getApplicationDetails(fertilizer, area, rate);
-        const isLiquid = fertilizer.type === '액상';
-        
-        // Total amount calculation
-        let totalAmount = (area * rate) / 1000; // Default to kg or L (assuming input is g or ml)
-        
-        return {
-            totalCost: result.totalCost,
-            totalAmount,
-            unit: isLiquid ? 'L' : 'kg'
-        };
-    }, [fertilizer, calcArea, calcRate]);
-
-    const categorizedNutrients = useMemo(() => {
-        return {
-            primary: ['N', 'P', 'K'],
-            secondary: ['Ca', 'Mg', 'S'],
-            micro: ['Fe', 'Mn', 'Zn', 'Cu', 'B', 'Mo', 'Cl', 'Na', 'Si', 'Ni', 'Co', 'V']
-        };
-    }, []);
-
-    const hasNutrient = (n: string) => (fertilizer as any)[n] > 0;
-
-    return (
-        <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex justify-center items-center p-4" onClick={onClose}>
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
-                <header className="bg-slate-50 border-b p-4 flex justify-between items-center">
-                    <div>
-                        <h3 className="font-bold text-lg text-slate-800 flex items-center gap-2">
-                            {fertilizer.name}
-                        </h3>
-                        <div className="flex gap-2 mt-1">
-                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
-                                fertilizer.usage === '그린' ? 'bg-green-100 text-green-800' :
-                                fertilizer.usage === '티' ? 'bg-blue-100 text-blue-800' :
-                                'bg-orange-100 text-orange-800'
-                            }`}>
-                                {fertilizer.usage}
-                            </span>
-                            <span className="text-[10px] px-2 py-0.5 bg-slate-200 text-slate-700 rounded-full">{fertilizer.type}</span>
-                        </div>
-                    </div>
-                    <button onClick={onClose} className="p-2 hover:bg-slate-200 rounded-full text-slate-500 transition-colors">
-                        <CloseIcon />
-                    </button>
-                </header>
-                
-                <div className="flex border-b">
-                    <button 
-                        className={`flex-1 py-3 text-sm font-semibold transition-colors ${activeTab === 'info' ? 'text-blue-600 border-b-2 border-blue-600 bg-blue-50/50' : 'text-slate-500 hover:bg-slate-50'}`}
-                        onClick={() => setActiveTab('info')}
-                    >
-                        📊 상세 정보
-                    </button>
-                    <button 
-                        className={`flex-1 py-3 text-sm font-semibold transition-colors ${activeTab === 'calc' ? 'text-green-600 border-b-2 border-green-600 bg-green-50/50' : 'text-slate-500 hover:bg-slate-50'}`}
-                        onClick={() => setActiveTab('calc')}
-                    >
-                        🧮 필요량 계산기
-                    </button>
-                </div>
-
-                <div className="overflow-y-auto p-6 flex-1">
-                    {activeTab === 'info' ? (
-                        <div className="space-y-6">
-                            {/* Description Section */}
-                            {fertilizer.description && (
-                                <div className="bg-slate-50 p-4 rounded-lg border border-slate-100 text-sm text-slate-700 leading-relaxed shadow-sm">
-                                    <h4 className="font-bold text-slate-900 mb-2 flex items-center gap-2 text-xs uppercase tracking-wider">
-                                        <DocumentSearchIcon className="w-4 h-4"/> 제품 특징
-                                    </h4>
-                                    <p className="whitespace-pre-line">{fertilizer.description}</p>
-                                </div>
-                            )}
-
-                            {/* Basic Specs */}
-                            <div className="grid grid-cols-2 gap-3 text-sm">
-                                <div className="bg-white p-3 rounded-lg border flex flex-col items-center justify-center text-center">
-                                    <span className="text-slate-400 text-xs mb-1">포장 단위</span>
-                                    <span className="font-bold text-slate-800">{fertilizer.unit}</span>
-                                </div>
-                                <div className="bg-white p-3 rounded-lg border flex flex-col items-center justify-center text-center">
-                                    <span className="text-slate-400 text-xs mb-1">가격</span>
-                                    <span className="font-bold text-slate-800">{fertilizer.price.toLocaleString()}원</span>
-                                </div>
-                                <div className="bg-white p-3 rounded-lg border flex flex-col items-center justify-center text-center">
-                                    <span className="text-slate-400 text-xs mb-1">권장 사용량</span>
-                                    <span className="font-bold text-slate-800">{fertilizer.rate}</span>
-                                </div>
-                                <div className="bg-white p-3 rounded-lg border flex flex-col items-center justify-center text-center">
-                                    <span className="text-slate-400 text-xs mb-1">NPK 비율</span>
-                                    <span className="font-bold text-slate-800">{fertilizer.npkRatio || `${fertilizer.N}-${fertilizer.P}-${fertilizer.K}`}</span>
-                                </div>
-                            </div>
-
-                            {/* Detailed Nutrient Analysis */}
-                            <div>
-                                <h4 className="font-bold text-slate-800 mb-3 flex items-center gap-2 text-sm border-b pb-2">
-                                    🌱 성분 함량 및 투입량 <span className="text-[10px] font-normal text-slate-500 ml-auto">권장량 기준</span>
-                                </h4>
-                                
-                                <div className="space-y-4">
-                                    {/* Primary */}
-                                    <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
-                                        <p className="text-xs font-bold text-slate-500 mb-2">다량 요소 (Macro)</p>
-                                        <div className="grid grid-cols-3 gap-2">
-                                            {categorizedNutrients.primary.map(n => (
-                                                <div key={n} className="bg-white rounded p-2 text-center border shadow-sm">
-                                                    <div className={`text-xs font-bold ${n==='N'?'text-green-600':n==='P'?'text-blue-600':'text-orange-600'}`}>{n}</div>
-                                                    <div className="text-sm font-bold text-slate-800">{(fertilizer as any)[n]}%</div>
-                                                    <div className="text-[10px] text-slate-500 mt-1 pt-1 border-t">{details.nutrients[n]?.toFixed(2)}g/㎡</div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    {/* Secondary */}
-                                    {categorizedNutrients.secondary.some(hasNutrient) && (
-                                        <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
-                                            <p className="text-xs font-bold text-slate-500 mb-2">2차 요소 (Secondary)</p>
-                                            <div className="grid grid-cols-3 gap-2">
-                                                {categorizedNutrients.secondary.filter(hasNutrient).map(n => (
-                                                    <div key={n} className="bg-white rounded p-1.5 text-center border">
-                                                        <div className="text-[10px] text-slate-500 font-medium">{n}</div>
-                                                        <div className="text-xs font-bold text-slate-800">{(fertilizer as any)[n]}%</div>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* Micro & Others */}
-                                    {(categorizedNutrients.micro.some(hasNutrient) || (fertilizer.aminoAcid && fertilizer.aminoAcid > 0)) && (
-                                        <div className="bg-slate-50 rounded-lg p-3 border border-slate-100">
-                                            <p className="text-xs font-bold text-slate-500 mb-2">미량 요소 및 기타 (Micro & Others)</p>
-                                            <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
-                                                {categorizedNutrients.micro.filter(hasNutrient).map(n => (
-                                                    <div key={n} className="bg-white rounded p-1.5 text-center border">
-                                                        <div className="text-[10px] text-slate-500 font-medium">{n}</div>
-                                                        <div className="text-xs font-bold text-slate-800">{(fertilizer as any)[n]}%</div>
-                                                    </div>
-                                                ))}
-                                                {fertilizer.aminoAcid !== undefined && fertilizer.aminoAcid > 0 && (
-                                                    <div className="bg-purple-50 rounded p-1.5 text-center border border-purple-100 col-span-2">
-                                                        <div className="text-[10px] text-purple-600 font-bold">아미노산</div>
-                                                        <div className="text-xs font-bold text-purple-800">{fertilizer.aminoAcid}%</div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="space-y-6">
-                            <div className="bg-green-50 p-4 rounded-lg border border-green-100 mb-4">
-                                <p className="text-sm text-green-800 font-medium mb-2">계산할 면적과 사용량을 입력하세요.</p>
-                                <div className="grid gap-4">
-                                    <div>
-                                        <label className="block text-xs font-semibold text-green-900 mb-1">시비 면적 (㎡)</label>
-                                        <input 
-                                            type="number" 
-                                            value={calcArea} 
-                                            onChange={e => setCalcArea(e.target.value)}
-                                            placeholder="예: 500"
-                                            className="w-full p-2 border border-green-200 rounded-md focus:ring-2 focus:ring-green-500 outline-none"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-xs font-semibold text-green-900 mb-1">사용량 ({fertilizer.type === '액상' ? 'ml' : 'g'}/㎡)</label>
-                                        <input 
-                                            type="number" 
-                                            value={calcRate} 
-                                            onChange={e => setCalcRate(e.target.value)}
-                                            placeholder={parseRateValue(fertilizer.rate).toString()}
-                                            className="w-full p-2 border border-green-200 rounded-md focus:ring-2 focus:ring-green-500 outline-none"
-                                        />
-                                    </div>
-                                </div>
-                            </div>
-
-                            {calcResult ? (
-                                <div className="space-y-4 animate-fadeIn">
-                                    <div className="grid grid-cols-2 gap-4">
-                                        <div className="p-4 bg-white border rounded-xl shadow-sm text-center">
-                                            <p className="text-xs text-slate-500 mb-1">총 필요 제품량</p>
-                                            <p className="text-2xl font-bold text-slate-800">
-                                                {calcResult.totalAmount.toFixed(1)}
-                                                <span className="text-sm font-normal ml-1 text-slate-600">{calcResult.unit}</span>
-                                            </p>
-                                        </div>
-                                        <div className="p-4 bg-white border rounded-xl shadow-sm text-center">
-                                            <p className="text-xs text-slate-500 mb-1">총 예상 비용</p>
-                                            <p className="text-2xl font-bold text-blue-600">
-                                                {Math.round(calcResult.totalCost).toLocaleString()}
-                                                <span className="text-sm font-normal ml-1 text-slate-600">원</span>
-                                            </p>
-                                        </div>
-                                    </div>
-                                    <p className="text-center text-xs text-slate-400">
-                                        * 실제 구매 단위({fertilizer.unit})에 따라 비용은 달라질 수 있습니다.
-                                    </p>
-                                </div>
-                            ) : (
-                                <div className="text-center py-8 text-slate-400">
-                                    <CalculatorIcon />
-                                    <p className="mt-2 text-sm">값을 입력하면 결과가 표시됩니다.</p>
-                                </div>
-                            )}
-                        </div>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
-};
 
 export default function TurfFertilizerApp() {
   const [user, setUser] = useState<string | null>(null);
@@ -372,7 +43,7 @@ export default function TurfFertilizerApp() {
       '페어웨이': Array(12).fill({ N: 0, P: 0, K: 0 }),
   });
   const [fairwayGuideType, setFairwayGuideType] = useState<'KBG' | 'Zoysia'>('KBG');
-  const [showLastYearComparison, setShowLastYearComparison] = useState(false); // Toggle for chart comparison
+  const [showLastYearComparison, setShowLastYearComparison] = useState(false); 
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const logSectionRef = useRef<HTMLElement>(null);
@@ -385,16 +56,16 @@ export default function TurfFertilizerApp() {
   // Fertilizer List Filter State
   const [filterUsage, setFilterUsage] = useState<string>('전체');
   const [filterType, setFilterType] = useState<string>('전체');
-  const [isFertilizerListOpen, setIsFertilizerListOpen] = useState(false); // New state to control collapse
+  const [isFertilizerListOpen, setIsFertilizerListOpen] = useState(false);
   
-  // Log entry form states (Tabbed)
+  // Log entry form states
   const [activeLogTab, setActiveLogTab] = useState<'그린' | '티' | '페어웨이'>('그린');
   const [logGreenArea, setLogGreenArea] = useState('');
   const [logTeeArea, setLogTeeArea] = useState('');
   const [logFairwayArea, setLogFairwayArea] = useState('');
   const [date, setDate] = useState('');
   const [applicationRate, setApplicationRate] = useState('');
-  const [topdressing, setTopdressing] = useState(''); // New Topdressing state
+  const [topdressing, setTopdressing] = useState(''); 
   const [logSearchTerm, setLogSearchTerm] = useState('');
   const [logFilterType, setLogFilterType] = useState<string>('전체');
   const [isProductSelectOpen, setIsProductSelectOpen] = useState(false);
@@ -404,15 +75,11 @@ export default function TurfFertilizerApp() {
   const [targetNutrientType, setTargetNutrientType] = useState<'N'|'P'|'K'>('N');
   const [targetNutrientAmount, setTargetNutrientAmount] = useState('');
 
-
-  // Replaces graphView
   const [tablePeriodView, setTablePeriodView] = useState<'daily' | 'monthly' | 'yearly'>('monthly');
-  
   const [visibleNutrients, setVisibleNutrients] = useState({ N: true, P: true, K: true });
   const [analysisCategory, setAnalysisCategory] = useState<'all' | '그린' | '티' | '페어웨이'>('all');
   const [analysisFairwayType, setAnalysisFairwayType] = useState<'KBG' | 'Zoysia'>('KBG');
   
-  // NEW: Cumulative View Toggle State
   const [isCumulative, setIsCumulative] = useState(false);
 
   const [aiResponse, setAiResponse] = useState('');
@@ -435,13 +102,11 @@ export default function TurfFertilizerApp() {
     unit: 'kg' | 'L';
   } | null>(null);
 
-  // Log Sorting and Filtering State
   const [sortOrder, setSortOrder] = useState('date-desc');
   const [filterProduct, setFilterProduct] = useState('');
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
 
-  // Authentication Check Effect
   useEffect(() => {
     const checkUser = async () => {
         const loggedInUser = localStorage.getItem('turf_user');
@@ -459,7 +124,6 @@ export default function TurfFertilizerApp() {
     checkUser();
   }, []);
 
-  // Data Loading Effect
   useEffect(() => {
     const loadData = async () => {
         if (!user) {
@@ -474,8 +138,8 @@ export default function TurfFertilizerApp() {
                 setAdminFertilizers(fetched);
             } else {
                 const [fetchedAdminFert, fetchedUserFert, loadedLog, settings] = await Promise.all([
-                    api.getFertilizers('admin'), // Master list
-                    api.getFertilizers(user),    // User's custom list
+                    api.getFertilizers('admin'), 
+                    api.getFertilizers(user),    
                     api.getLog(user),
                     api.getSettings(user),
                 ]);
@@ -501,7 +165,6 @@ export default function TurfFertilizerApp() {
     loadData();
   }, [user, isAdmin]);
 
-  // Combined Fertilizers
   const fertilizers = useMemo(() => {
       return [...adminFertilizers, ...userFertilizers];
   }, [adminFertilizers, userFertilizers]);
@@ -519,14 +182,12 @@ export default function TurfFertilizerApp() {
     });
   }, [fertilizers, filterUsage, filterType]);
 
-  // Data Saving Effects
   useEffect(() => {
     if (!isInitialDataLoading && user && !isAdmin) {
       api.saveLog(user, log);
     }
   }, [log, isInitialDataLoading, user, isAdmin]);
 
-  // Persist all settings including new manual plan fields
   useEffect(() => {
     if (!isInitialDataLoading && user && !isAdmin) {
       api.saveSettings(user, { 
@@ -557,7 +218,6 @@ export default function TurfFertilizerApp() {
         setUser(null);
         setCurrentUser(null);
         setIsAdmin(false);
-        // Reset temporary UI states
         setSelectedProduct(null);
         setLogGreenArea('');
         setLogTeeArea('');
@@ -575,7 +235,6 @@ export default function TurfFertilizerApp() {
     }
   };
 
-  // Fixed useEffect to prevent overwriting rate/date when selectedProduct changes due to user action
   useEffect(() => {
     if (!selectedProduct) {
         setApplicationRate('');
@@ -587,7 +246,6 @@ export default function TurfFertilizerApp() {
     }
   }, [selectedProduct]);
   
-  // Automatically set area when tab changes
   useEffect(() => {
       if (activeLogTab === '그린') setLogGreenArea(greenArea);
       else if (activeLogTab === '티') setLogTeeArea(teeArea);
@@ -609,7 +267,6 @@ export default function TurfFertilizerApp() {
     if (!selectedProduct) { alert('선택 필요: 비료를 선택하세요.'); return; }
     if (!date || !applicationRate) { alert('입력 필요: 날짜와 사용량을 입력하세요.'); return; }
     
-    // Only log the area for the active tab
     const areaStr = activeLogTab === '그린' ? logGreenArea : activeLogTab === '티' ? logTeeArea : logFairwayArea;
     const usage = activeLogTab;
 
@@ -647,10 +304,10 @@ export default function TurfFertilizerApp() {
     setLog(prev => [entry, ...prev].sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
     
     alert(`완료: ${usage} 구역에 시비 기록이 추가되었습니다.`);
-    setIsProductSelectOpen(false); // Close product select if open
+    setIsProductSelectOpen(false); 
     setLogSearchTerm('');
     setLogFilterType('전체');
-    setTopdressing(''); // Reset topdressing field
+    setTopdressing(''); 
   };
 
   const removeLogEntry = (idToRemove: string) => {
@@ -671,10 +328,9 @@ export default function TurfFertilizerApp() {
         const rate = parseFloat(applicationRate);
         if (isNaN(rate) || rate <= 0) return null;
         
-        return getApplicationDetails(selectedProduct, 1, rate).nutrients; // per 1m^2
+        return getApplicationDetails(selectedProduct, 1, rate).nutrients; 
     }, [selectedProduct, applicationRate]);
 
-  // Group Fertilizers for Select
   const groupedFertilizers = useMemo(() => {
       let filtered = fertilizers;
       if (logSearchTerm) {
@@ -691,7 +347,6 @@ export default function TurfFertilizerApp() {
       filtered.forEach(f => {
           if (groups[f.usage]) groups[f.usage].push(f);
           else {
-              // Fallback or other
               if(!groups['기타']) groups['기타'] = [];
               groups['기타'].push(f);
           }
@@ -704,20 +359,17 @@ export default function TurfFertilizerApp() {
     return log.filter(entry => entry.usage === analysisCategory);
   }, [log, analysisCategory]);
 
-  // Calculate Last Year's Actuals for Chart Comparison
   const lastYearActualNutrients = useMemo(() => {
       const lastYear = new Date().getFullYear() - 1;
       const data: { [monthIdx: number]: { N: number, P: number, K: number } } = {};
       for(let i=0; i<12; i++) data[i] = { N: 0, P: 0, K: 0 };
 
-      // Filter logs for last year and current active area
       log.forEach(entry => {
           const entryDate = new Date(entry.date);
           if (entryDate.getFullYear() === lastYear && entry.usage === activePlanTab) {
               const month = entryDate.getMonth();
               const product = fertilizers.find(f => f.name === entry.product);
               if (product) {
-                  // Re-calculate nutrients per m2 based on recorded rate
                   const n = getApplicationDetails(product, 1, entry.applicationRate).nutrients;
                   data[month].N += n.N || 0;
                   data[month].P += n.P || 0;
@@ -728,16 +380,14 @@ export default function TurfFertilizerApp() {
       return data;
   }, [log, activePlanTab, fertilizers]);
 
-  // Aggregate Product Quantity Data
   const aggregatedProductQuantity = useMemo(() => {
     const data: Record<string, { totalAmount: number, unit: string, cost: number }> = {};
-    let filtered = filteredLogForAnalysis; // use declared variable
+    let filtered = filteredLogForAnalysis; 
     
     filtered.forEach(entry => {
-        // Find product to check if liquid
         const product = fertilizers.find(f => f.name === entry.product);
         const isLiquid = product?.type === '액상' || entry.applicationUnit.includes('ml');
-        const amount = (entry.area * entry.applicationRate) / 1000; // kg or L
+        const amount = (entry.area * entry.applicationRate) / 1000; 
         
         if (!data[entry.product]) {
             data[entry.product] = { totalAmount: 0, unit: isLiquid ? 'L' : 'kg', cost: 0 };
@@ -748,7 +398,7 @@ export default function TurfFertilizerApp() {
     
     return Object.entries(data)
         .sort((a,b) => b[1].totalAmount - a[1].totalAmount)
-        .slice(0, 5); // Top 5
+        .slice(0, 5); 
   }, [filteredLogForAnalysis, fertilizers]);
 
 
@@ -822,18 +472,6 @@ export default function TurfFertilizerApp() {
     return perM2;
   }, [categorySummaries, greenArea, teeArea, fairwayArea]);
 
-  const handleNutrientToggle = (nutrient: 'N' | 'P' | 'K') => {
-    setVisibleNutrients(prev => {
-        const newVisible = { ...prev, [nutrient]: !prev[nutrient] };
-        // Prevent unchecking the last nutrient
-        if (Object.values(newVisible).every(v => !v)) {
-            return prev;
-        }
-        return newVisible;
-    });
-  };
-
-    // NEW: Monthly Nutrient Chart Data with Guide Comparison
     const monthlyNutrientChartData = useMemo(() => {
         const data: Record<string, { 
             month: string, 
@@ -841,12 +479,9 @@ export default function TurfFertilizerApp() {
             guideN: number, guideP: number, guideK: number
         }> = {};
         
-        // 1. Determine which Guide to use
         let guideKey = '';
         let usingManualTarget = false;
         
-        // Logic update: If looking at analysis chart, we want to see Actual vs Target.
-        // If Manual Mode is ON for the whole app, the Target is the manual plan.
         if (manualPlanMode && analysisCategory !== 'all') {
             usingManualTarget = true;
         } else {
@@ -855,9 +490,8 @@ export default function TurfFertilizerApp() {
              else if (analysisCategory === '페어웨이') guideKey = analysisFairwayType === 'KBG' ? '한지형잔디 (켄터키블루그라스)' : '난지형잔디 (한국잔디)';
         }
         
-        // 2. Initialize Months (1-12)
         for(let i=0; i<12; i++) {
-            const currentYear = new Date().getFullYear(); // Use current year for display context
+            const currentYear = new Date().getFullYear(); 
             const monthKey = `${currentYear}-${String(i + 1).padStart(2, '0')}`;
             
             let gN = 0, gP = 0, gK = 0;
@@ -886,25 +520,15 @@ export default function TurfFertilizerApp() {
             };
         }
 
-        // 3. Aggregate Actual Data using exact application rate (g/m2)
-        // CRITICAL UPDATE: Calculate based on applicationRate * nutrient% directly
-        // This avoids distortion from Area division
         filteredLogForAnalysis.forEach(entry => {
             const date = new Date(entry.date);
             if (date.getFullYear() === new Date().getFullYear()) {
                 const monthIndex = date.getMonth();
                 const monthKey = `${date.getFullYear()}-${String(monthIndex + 1).padStart(2, '0')}`;
                 
-                // Find product definition to get percentages
                 const product = fertilizers.find(f => f.name === entry.product);
                 
                 if (data[monthKey] && product) {
-                    // Application Rate is already g/m2 (or ml/m2)
-                    // If ml/m2, we should ideally use density, but simpler to assume rate enters formulation
-                    // We use getApplicationDetails logic for consistency, but scaled to 1m2
-                    
-                    // We can reuse getApplicationDetails(product, 1, entry.applicationRate)
-                    // But to be super fast and consistent with log input:
                     const nutrientsPerM2 = getApplicationDetails(product, 1, entry.applicationRate).nutrients;
 
                     data[monthKey].N += nutrientsPerM2.N || 0;
@@ -914,14 +538,12 @@ export default function TurfFertilizerApp() {
             }
         });
         
-        // Round final values
         Object.values(data).forEach(item => {
             item.N = parseFloat(item.N.toFixed(2));
             item.P = parseFloat(item.P.toFixed(2));
             item.K = parseFloat(item.K.toFixed(2));
         });
         
-        // If 'all' is selected, we don't show guide because it's mixed
         if (analysisCategory === 'all') {
             Object.values(data).forEach(item => {
                 item.guideN = 0; item.guideP = 0; item.guideK = 0;
@@ -931,7 +553,6 @@ export default function TurfFertilizerApp() {
         return Object.values(data).sort((a, b) => a.month.localeCompare(b.month));
     }, [filteredLogForAnalysis, analysisCategory, analysisFairwayType, greenArea, teeArea, fairwayArea, manualPlanMode, manualTargets, fertilizers]);
     
-    // NEW: Final Data for Chart/Table (Handles Cumulative toggle)
     const finalAnalysisData = useMemo(() => {
         if (!isCumulative) return monthlyNutrientChartData;
         
@@ -958,7 +579,6 @@ export default function TurfFertilizerApp() {
         });
     }, [monthlyNutrientChartData, isCumulative]);
 
-    // New useMemo for Manual Plan Chart
     const manualPlanComparisonData = useMemo(() => {
         let guideKey = selectedGuide;
         if (activePlanTab === '그린') guideKey = '한지형잔디 (벤트그라스)';
@@ -1069,7 +689,6 @@ export default function TurfFertilizerApp() {
       }));
   };
   
-  // Plan Import Function
   const handleImportPlan = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file) return;
@@ -1082,7 +701,6 @@ export default function TurfFertilizerApp() {
           const worksheet = workbook.Sheets[sheetName];
           const jsonData = XLSX.utils.sheet_to_json(worksheet);
 
-          // Expected Format: Month (1-12), N, P, K
           const newTargets = Array(12).fill({ N: 0, P: 0, K: 0 });
           jsonData.forEach((row: any) => {
               const month = parseInt(row['월'] || row['Month']);
@@ -1105,7 +723,6 @@ export default function TurfFertilizerApp() {
       reader.readAsArrayBuffer(file);
   };
 
-  // Reverse Calculation Handler
   const handleReverseCalculation = () => {
       if (!selectedProduct) {
           alert('비료 제품을 먼저 선택해주세요.');
@@ -1124,13 +741,6 @@ export default function TurfFertilizerApp() {
           return;
       }
 
-      // Formula: Required Rate (g or ml / m2) = Target (g/m2) / (Percentage / 100)
-      // Note: If liquid, this logic assumes rate is ml/m2 and concentration applies similarly or based on density.
-      // For simplicity in standard NPK fertilizers:
-      // Rate = Target / (Content / 100)
-      
-      // If it's a liquid product with specific concentration mechanics not just %, this is an approximation based on % field in type
-      
       const calculatedRate = target / (nutrientContent / 100);
       setApplicationRate(calculatedRate.toFixed(2));
       alert(`목표 ${targetNutrientType} ${target}g/㎡ 달성을 위해\n약 ${calculatedRate.toFixed(1)} ${selectedProduct.type === '액상' ? 'ml' : 'g'}/㎡ 살포가 필요합니다.`);
@@ -1146,7 +756,6 @@ export default function TurfFertilizerApp() {
       }), { N: 0, P: 0, K: 0 });
   }, [manualTargets, activePlanTab]);
   
-  // NEW: Standard Guide Total for comparison
   const standardGuideTotal = useMemo(() => {
       let guideKey = '';
       if (activePlanTab === '그린') guideKey = '한지형잔디 (벤트그라스)';
@@ -1157,7 +766,6 @@ export default function TurfFertilizerApp() {
       return guide || { N: 0, P: 0, K: 0 };
   }, [activePlanTab, fairwayGuideType]);
 
-  // NEW: Difference calculation
   const manualPlanDifference = useMemo(() => {
       return {
           N: manualPlanTotal.N - standardGuideTotal.N,
@@ -1182,9 +790,9 @@ export default function TurfFertilizerApp() {
 
     const manualPlanPrompt = manualPlanMode ? `
       **사용자 정의 연간 계획 (구역별, 단위: g/㎡):**
-      - 그린 목표 총량: N ${manualTargets['그린'].reduce((a,b)=>a+b.N,0)}, P ${manualTargets['그린'].reduce((a,b)=>a+b.P,0)}, K ${manualTargets['그린'].reduce((a,b)=>a+b.K,0)}
-      - 티 목표 총량: N ${manualTargets['티'].reduce((a,b)=>a+b.N,0)}, P ${manualTargets['티'].reduce((a,b)=>a+b.P,0)}, K ${manualTargets['티'].reduce((a,b)=>a+b.K,0)}
-      - 페어웨이 목표 총량: N ${manualTargets['페어웨이'].reduce((a,b)=>a+b.N,0)}, P ${manualTargets['페어웨이'].reduce((a,b)=>a+b.P,0)}, K ${manualTargets['페어웨이'].reduce((a,b)=>a+b.K,0)}
+      - 그린 목표 총량: N ${manualTargets['그린'].reduce((a: number, b) => a + b.N, 0)}, P ${manualTargets['그린'].reduce((a: number, b) => a + b.P, 0)}, K ${manualTargets['그린'].reduce((a: number, b) => a + b.K, 0)}
+      - 티 목표 총량: N ${manualTargets['티'].reduce((a: number, b) => a + b.N, 0)}, P ${manualTargets['티'].reduce((a: number, b) => a + b.P, 0)}, K ${manualTargets['티'].reduce((a: number, b) => a + b.K, 0)}
+      - 페어웨이 목표 총량: N ${manualTargets['페어웨이'].reduce((a: number, b) => a + b.N, 0)}, P ${manualTargets['페어웨이'].reduce((a: number, b) => a + b.P, 0)}, K ${manualTargets['페어웨이'].reduce((a: number, b) => a + b.K, 0)}
     ` : `
       **가이드 권장 총량 (단일 가이드 기준):** N ${FERTILIZER_GUIDE[selectedGuide].N}, P ${FERTILIZER_GUIDE[selectedGuide].P}, K ${FERTILIZER_GUIDE[selectedGuide].K}
     `;
@@ -1255,7 +863,7 @@ export default function TurfFertilizerApp() {
         contents: fullPrompt,
       });
 
-      let text = response.text || '';
+      let text = response.text;
       
       // Parse JSON Action with robust regex
       // Tries to find ```json ... ``` first, then falls back to finding the first { ... } block
@@ -1330,7 +938,6 @@ export default function TurfFertilizerApp() {
     });
   };
 
-  // Implement frequentCombinations
   const frequentCombinations = useMemo(() => {
       if (log.length === 0) return [];
       const counts: Record<string, number> = {};
@@ -1354,7 +961,6 @@ export default function TurfFertilizerApp() {
           .map(([key]) => details[key]);
   }, [log]);
 
-  // Implement handleQuickAdd
   const handleQuickAdd = (productName: string, rate: number) => {
       const product = fertilizers.find(f => f.name === productName);
       if (product) {
@@ -1364,7 +970,7 @@ export default function TurfFertilizerApp() {
       }
   };
 
-  const formattedAiResponse = useMemo<string>(() => {
+  const formattedAiResponse = useMemo(() => {
     if (!aiResponse) return '';
     
     let html = aiResponse
@@ -1381,13 +987,9 @@ export default function TurfFertilizerApp() {
     return html;
   }, [aiResponse]);
   
-  // Custom Tooltip for Combined Chart to show Total Amount
   const CustomChartTooltip = ({ active, payload, label }: any) => {
       if (active && payload && payload.length) {
-          // Extract data from payload
           const n = payload.find((p:any) => p.dataKey === 'planN')?.value || 0;
-          const p = payload.find((p:any) => p.dataKey === 'planP')?.value || 0;
-          const k = payload.find((p:any) => p.dataKey === 'planK')?.value || 0;
           const lastN = payload.find((p:any) => p.dataKey === 'lastYearN')?.value || 0;
 
           return (
@@ -1453,7 +1055,6 @@ export default function TurfFertilizerApp() {
                 </button>
             </div>
             
-            {/* Removed 'open' attribute to hide by default */}
             <details className="group">
                 <summary className="cursor-pointer font-medium text-slate-600 flex items-center gap-2 select-none mb-4">
                      <span className="transition-transform group-open:rotate-90">▶</span> 상세 계획 보기/숨기기
@@ -1510,7 +1111,6 @@ export default function TurfFertilizerApp() {
                                                 const p = parseFloat((guide.P * dist.P[i]).toFixed(2));
                                                 const k = parseFloat((guide.K * dist.K[i]).toFixed(2));
                                                 
-                                                // Max Value for Heatmap intensity (approx 3g as max monthly input)
                                                 const maxVal = 3; 
 
                                                 return (
@@ -1541,7 +1141,6 @@ export default function TurfFertilizerApp() {
                             <div className="bg-blue-50 border border-blue-200 p-4 rounded-lg mb-6">
                                 <p className="text-sm text-blue-800 mb-3 font-medium">나만의 월별 목표 시비량을 구역별로 설정하여 연간 계획을 수립하세요. (단위: g/㎡)</p>
                                 
-                                {/* Area Tab Selector */}
                                 <div className="flex border-b border-blue-300 mb-3 items-end">
                                     {(['그린', '티', '페어웨이'] as const).map(tab => (
                                         <button 
@@ -1591,7 +1190,6 @@ export default function TurfFertilizerApp() {
                                         </thead>
                                         <tbody>
                                             {(manualTargets[activePlanTab] || []).map((target, i) => {
-                                                // LOGIC CHANGE: Determine guide based on active tab
                                                 let manualGuideKey = selectedGuide;
                                                 if (activePlanTab === '그린') manualGuideKey = '한지형잔디 (벤트그라스)';
                                                 else if (activePlanTab === '티') manualGuideKey = '한지형잔디 (켄터키블루그라스)';
@@ -1626,7 +1224,6 @@ export default function TurfFertilizerApp() {
                                                 <td className="p-2 text-blue-800">{manualPlanTotal.P.toFixed(1)}</td>
                                                 <td className="p-2 text-orange-800">{manualPlanTotal.K.toFixed(1)}</td>
                                             </tr>
-                                            {/* NEW: Comparison Rows */}
                                             <tr className="bg-slate-50 text-xs border-t border-slate-200">
                                                 <td className="p-2 font-semibold text-slate-600">표준 합계</td>
                                                 <td className="p-2 font-mono text-slate-600">{standardGuideTotal.N}</td>
@@ -1645,7 +1242,6 @@ export default function TurfFertilizerApp() {
                                                     {standardGuideTotal.K > 0 ? Math.round((manualPlanTotal.K / standardGuideTotal.K) * 100) : 0}%
                                                 </td>
                                             </tr>
-                                            {/* NEW ROW: Difference (Plan - Standard) */}
                                             <tr className="bg-slate-50 text-xs border-t border-slate-200">
                                                 <td className="p-2 font-semibold text-slate-600">차이 (±g)</td>
                                                 <td className={`p-2 font-bold font-mono ${manualPlanDifference.N > 0 ? 'text-red-500' : manualPlanDifference.N < 0 ? 'text-blue-600' : 'text-slate-400'}`}>
@@ -1663,7 +1259,6 @@ export default function TurfFertilizerApp() {
                                 </div>
                             </div>
                             
-                            {/* Comparison Chart Section */}
                             <div className="mt-6 bg-white p-4 rounded-lg border shadow-sm">
                                 <div className="flex justify-between items-center mb-4">
                                     <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2">
@@ -1749,9 +1344,7 @@ export default function TurfFertilizerApp() {
                                     className="w-full appearance-none bg-slate-50 border border-slate-200 text-slate-700 py-2 pl-3 pr-8 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer hover:bg-slate-100 transition-colors"
                                 >
                                     <option value="전체">전체 타입</option>
-                                    {uniqueTypes.map(t => (
-                                        <option key={t} value={t}>{t}</option>
-                                    ))}
+                                    {uniqueTypes.map(t => <option key={t} value={t}>{t}</option>)}
                                 </select>
                                 <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
                                     <ChevronDownIcon className="h-4 w-4" />
