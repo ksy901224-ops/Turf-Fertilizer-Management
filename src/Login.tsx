@@ -44,6 +44,11 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     setError('');
     setInfoMessage('');
     
+    if (!username || !password || !golfCourse) {
+        setError('모든 필드를 입력해주세요.');
+        return;
+    }
+
     if (password !== confirmPassword) {
       setError('비밀번호가 일치하지 않습니다.');
       return;

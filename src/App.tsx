@@ -1749,7 +1749,9 @@ export default function TurfFertilizerApp() {
                                     className="w-full appearance-none bg-slate-50 border border-slate-200 text-slate-700 py-2 pl-3 pr-8 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer hover:bg-slate-100 transition-colors"
                                 >
                                     <option value="전체">전체 타입</option>
-                                    {uniqueTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                                    {uniqueTypes.map(t => (
+                                        <option key={t} value={t}>{t}</option>
+                                    ))}
                                 </select>
                                 <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-500">
                                     <ChevronDownIcon className="h-4 w-4" />
