@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { GoogleGenAI } from '@google/genai';
@@ -131,8 +130,6 @@ export default function TurfFertilizerApp() {
     if (!user) return;
 
     // Load Admin Fertilizers (Master List)
-    // Note: If you want real-time updates for master fertilizers too, you could subscribe to 'admin' appData.
-    // For now, we fetch once or use subscription if critical. Let's use subscription for consistency.
     const unsubscribeAdmin = api.subscribeToAppData('admin', (data) => {
         if (data && data.fertilizers) {
             setAdminFertilizers(data.fertilizers);
@@ -287,17 +284,6 @@ export default function TurfFertilizerApp() {
       
       const newTargets = { ...manualTargets, [activePlanTab]: currentAreaTargets };
       setManualTargets(newTargets);
-      
-      if (user && user !== 'admin') {
-          // Debouncing could be good here, but for simplicity/reliability we save
-          // Note: frequent saves on keystroke might be heavy. 
-          // Ideally use onBlur for the input, but here we save on change to keep sync simple.
-          // Or better: Update local state here, Save in a useEffect with debounce? 
-          // Let's rely on the user finishing edits usually. 
-          // Actually, saving on every keystroke is bad for DB usage.
-          // Let's just update local state here, and rely on an explicit "Save Plans" or just save onBlur in the input element.
-          // For now, I will modify the input to save onBlur.
-      }
   };
   
   // Specific handler for saving manual targets (e.g. onBlur)
@@ -338,7 +324,7 @@ export default function TurfFertilizerApp() {
       return groups;
   }, [fertilizers, logSearchTerm, logFilterType]);
 
-  const monthlyNutrientChartData = useMemo(() => {
+  const monthlyNutrientChartData = useMemo<any[]>(() => {
       const data: any = {};
       let guideKey = '';
       let usingManualTarget = manualPlanMode && analysisCategory !== 'all';
@@ -382,7 +368,7 @@ export default function TurfFertilizerApp() {
       return Object.values(data).sort((a:any, b:any) => a.month.localeCompare(b.month));
   }, [log, analysisCategory, analysisFairwayType, manualPlanMode, manualTargets, fertilizers]);
 
-  const finalAnalysisData = useMemo(() => {
+  const finalAnalysisData = useMemo<any[]>(() => {
       if (!isCumulative) return monthlyNutrientChartData;
       let cumN = 0, cumP = 0, cumK = 0, cumGuideN = 0, cumGuideP = 0, cumGuideK = 0;
       return (monthlyNutrientChartData as any[]).map(item => {
@@ -476,7 +462,7 @@ export default function TurfFertilizerApp() {
                         checked={manualPlanMode} 
                         onChange={(e) => {
                             setManualPlanMode(e.target.checked);
-                            handleSaveSettings(); // Explicit save on toggle
+                            handleSaveSettings();
                         }}
                         className="toggle-checkbox"
                     />
@@ -586,7 +572,7 @@ export default function TurfFertilizerApp() {
                                 onChange={e => setLogSearchTerm(e.target.value)}
                                 onClick={e => e.stopPropagation()}
                             />
-                            {Object.entries(groupedFertilizers).map(([grp, items]) => (
+                            {Object.entries(groupedFertilizers).map(([grp, items]: [string, Fertilizer[]]) => (
                                 items.length > 0 && (
                                     <div key={grp}>
                                         <div className="px-3 py-1 bg-slate-100 text-xs font-bold text-slate-500">{grp}</div>
