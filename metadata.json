@@ -1,5 +1,5 @@
 {
-  "name": "[E&L]Turf Fertilizer Management",
+  "name": "[E&L] AI Turf Management",
   "description": "An application to track and manage turf fertilizer applications, calculate nutrient loads, and monitor costs.",
   "requestFramePermissions": []
 }

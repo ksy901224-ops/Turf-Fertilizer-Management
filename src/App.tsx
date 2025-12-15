@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { GoogleGenAI } from '@google/genai';
@@ -1106,7 +1107,7 @@ export default function TurfFertilizerApp() {
     <div className="min-h-screen bg-slate-100 font-sans p-4 sm:p-6 lg:p-8">
       <div className="max-w-4xl mx-auto space-y-6">
         <header className="text-center relative py-4">
-          <h1 className="text-3xl sm:text-4xl font-bold text-slate-800">잔디 비료 관리 앱</h1>
+          <h1 className="text-3xl sm:text-4xl font-bold text-slate-800">AI Turf Management</h1>
           <p className="text-slate-600 mt-2">Turf Fertilizer Management</p>
            <div className="absolute top-4 right-0 flex items-center gap-2">
               <span className="text-sm font-medium text-slate-600 hidden sm:inline">

@@ -107,7 +107,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
             <p className="text-sm text-slate-500">
             {isSigningUp 
                 ? '새 계정을 만들어 데이터를 관리하세요.'
-                : '잔디 비료 관리 앱에 오신 것을 환영합니다.'
+                : 'AI Turf Management에 오신 것을 환영합니다.'
             }
             </p>
         </div>
