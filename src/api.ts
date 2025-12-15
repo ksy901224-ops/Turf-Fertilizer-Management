@@ -4,6 +4,40 @@ import { FERTILIZER_GUIDE } from './constants';
 import { db } from './firebase';
 import { doc, getDoc, setDoc, updateDoc, collection, getDocs, deleteDoc, onSnapshot, Unsubscribe, QuerySnapshot, DocumentData } from 'firebase/firestore';
 
+// --- Interfaces & Defaults ---
+
+export interface UserSettings {
+    greenArea: string;
+    teeArea: string;
+    fairwayArea: string;
+    selectedGuide: string;
+    manualPlanMode?: boolean;
+    manualTargets?: { [area: string]: { N: number, P: number, K: number }[] };
+    fairwayGuideType?: 'KBG' | 'Zoysia';
+}
+
+// Define Default Settings to ensure type safety
+const DEFAULT_USER_SETTINGS: UserSettings = {
+    greenArea: '',
+    teeArea: '',
+    fairwayArea: '',
+    selectedGuide: Object.keys(FERTILIZER_GUIDE)[0] || '난지형잔디 (한국잔디)',
+    manualPlanMode: false,
+    manualTargets: {
+        '그린': Array(12).fill({ N: 0, P: 0, K: 0 }),
+        '티': Array(12).fill({ N: 0, P: 0, K: 0 }),
+        '페어웨이': Array(12).fill({ N: 0, P: 0, K: 0 }),
+    },
+    fairwayGuideType: 'KBG'
+};
+
+interface AppData {
+    logs: LogEntry[];
+    fertilizers: Fertilizer[];
+    settings: UserSettings;
+    notificationSettings: NotificationSettings;
+}
+
 // --- Helper Functions ---
 
 const delay = (ms: number = 300) => new Promise(resolve => setTimeout(resolve, ms));
@@ -35,7 +69,7 @@ export const seedAdminIfNeeded = async () => {
                 await setDoc(adminDataRef, {
                     logs: [],
                     fertilizers: initialFertilizers,
-                    settings: {},
+                    settings: DEFAULT_USER_SETTINGS,
                     notificationSettings: { enabled: false, email: '', threshold: 10 }
                 });
             }
@@ -92,7 +126,7 @@ export const createUser = async (username: string, password_provided: string, go
         await setDoc(dataRef, {
             logs: [],
             fertilizers: [], 
-            settings: {},
+            settings: DEFAULT_USER_SETTINGS,
             notificationSettings: { enabled: false, email: '', threshold: 10 }
         });
 
@@ -138,38 +172,6 @@ export const deleteUser = async (username: string): Promise<void> => {
 };
 
 // --- Data Functions (Firestore & Real-time) ---
-
-export interface UserSettings {
-    greenArea: string;
-    teeArea: string;
-    fairwayArea: string;
-    selectedGuide: string;
-    manualPlanMode?: boolean;
-    manualTargets?: { [area: string]: { N: number, P: number, K: number }[] };
-    fairwayGuideType?: 'KBG' | 'Zoysia';
-}
-
-// Define Default Settings to ensure type safety
-const DEFAULT_USER_SETTINGS: UserSettings = {
-    greenArea: '',
-    teeArea: '',
-    fairwayArea: '',
-    selectedGuide: Object.keys(FERTILIZER_GUIDE)[0] || '난지형잔디 (한국잔디)',
-    manualPlanMode: false,
-    manualTargets: {
-        '그린': Array(12).fill({ N: 0, P: 0, K: 0 }),
-        '티': Array(12).fill({ N: 0, P: 0, K: 0 }),
-        '페어웨이': Array(12).fill({ N: 0, P: 0, K: 0 }),
-    },
-    fairwayGuideType: 'KBG'
-};
-
-interface AppData {
-    logs: LogEntry[];
-    fertilizers: Fertilizer[];
-    settings: UserSettings;
-    notificationSettings: NotificationSettings;
-}
 
 // Subscribe to a specific user's App Data
 export const subscribeToAppData = (username: string, onUpdate: (data: Partial<AppData> | null) => void): Unsubscribe => {
