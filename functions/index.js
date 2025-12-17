@@ -11,12 +11,15 @@ const nodemailer = require("nodemailer");
 admin.initializeApp();
 
 // Configure your email transporter using Environment Variables
-// Set these via CLI: firebase functions:config:set gmail.email="your@gmail.com" gmail.password="app-password"
+// Check process.env first (standard), then functions.config() (legacy/CLI set)
+const gmailEmail = process.env.GMAIL_EMAIL || functions.config().gmail?.email;
+const gmailPassword = process.env.GMAIL_PASSWORD || functions.config().gmail?.password;
+
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
-    user: process.env.GMAIL_EMAIL || functions.config().gmail?.email,
-    pass: process.env.GMAIL_PASSWORD || functions.config().gmail?.password,
+    user: gmailEmail,
+    pass: gmailPassword,
   },
 });
 
@@ -26,6 +29,7 @@ exports.sendAdminNotificationOnSignup = functions.firestore
     const newUser = snap.data();
     
     // Requirement: Process only if approved is false (new signups are usually false)
+    // Note: Use 'isApproved' or 'approved' depending on your DB schema. API uses 'isApproved'.
     const isUnapproved = newUser.isApproved === false || newUser.approved === false;
 
     if (!isUnapproved) {

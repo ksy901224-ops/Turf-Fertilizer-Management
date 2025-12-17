@@ -87,7 +87,7 @@ export const validateUser = async (username: string, password_provided: string):
             const user = userSnap.data() as User;
             
             if (user.password === password_provided) {
-                // Check approval status
+                // Check approval status - Admin can login even if isApproved is somehow false
                 if (user.role !== 'admin' && !user.isApproved) {
                     return 'pending';
                 }
@@ -119,7 +119,7 @@ export const createUser = async (username: string, password_provided: string, go
             username, 
             password: password_provided, 
             golfCourse, 
-            role: 'user', // Default role
+            role: 'user', // Default role for new signups
             isApproved: false // Default approval status
         };
         await setDoc(userRef, newUser);
@@ -320,7 +320,7 @@ export const getAllUsersData = async (): Promise<UserDataSummary[]> => {
                 logs: [...logs].sort((a: LogEntry, b: LogEntry) => new Date(b.date).getTime() - new Date(a.date).getTime()),
                 fertilizers,
                 isApproved: userData.isApproved ?? true,
-                role: userData.role
+                role: userData.role || 'user'
             });
         }
         return allData;

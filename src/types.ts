@@ -69,8 +69,8 @@ export interface User {
   username: string;
   password?: string;
   golfCourse: string;
+  isApproved?: boolean;
   role: 'admin' | 'user';
-  isApproved: boolean;
 }
 
 export interface UserDataSummary {

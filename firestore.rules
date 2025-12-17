@@ -2,10 +2,10 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     
-    // Check if the requesting user is an admin
+    // Check if the requesting user is an admin by reading their user document
+    // Note: This requires the user to be authenticated via Firebase Auth with a matching UID
     function isAdmin() {
       return request.auth != null && 
-             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin";
     }
 
@@ -20,12 +20,12 @@ service cloud.firestore {
       // Allow reading: User can read own profile; Admin can read all
       allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
       
-      // Allow creation: User can create own profile, but strict initial values
-      // We assume client sends {isApproved: false, role: 'user', ...}
-      allow create: if request.auth != null && request.auth.uid == userId;
+      // Allow creation: User can create own profile, but enforces default role 'user'
+      // The user cannot set their own role to 'admin' during creation
+      allow create: if request.auth != null && request.auth.uid == userId && request.resource.data.role == 'user';
 
       // Allow update: 
-      // 1. Admin can update anything (e.g., approve users)
+      // 1. Admin can update anything (e.g., approve users, change roles)
       // 2. User can update their own profile BUT NOT 'isApproved' or 'role' fields
       allow update: if request.auth != null && (
         isAdmin() || 

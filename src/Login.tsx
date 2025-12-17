@@ -33,6 +33,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
             setError('사용자 이름 또는 비밀번호가 잘못되었습니다.');
         }
     } catch (err) {
+        console.error(err);
         setError('로그인 중 오류가 발생했습니다.');
     } finally {
         setIsLoading(false);
@@ -46,18 +47,15 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     
     if (!username || !password || !golfCourse) {
         setError('모든 필드를 입력해주세요.');
-        setIsLoading(false);
         return;
     }
 
     if (password !== confirmPassword) {
       setError('비밀번호가 일치하지 않습니다.');
-      setIsLoading(false);
       return;
     }
     if (username.trim().toLowerCase() === 'admin') {
         setError('\'admin\'은 예약된 사용자 이름입니다. 다른 이름을 사용해주세요.');
-        setIsLoading(false);
         return;
     }
     
@@ -80,6 +78,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
             setError('알 수 없는 오류가 발생했습니다.');
         }
     } catch (err) {
+        console.error(err);
         setError('회원가입 중 오류가 발생했습니다.');
     } finally {
         setIsLoading(false);
