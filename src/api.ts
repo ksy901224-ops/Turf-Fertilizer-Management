@@ -44,19 +44,35 @@ const initialFertilizers: Fertilizer[] = [
     { name: '액상 영양제 (10-10-10)', usage: '그린', type: '액상', N:10, P:10, K:10, Ca:0, Mg:0, S:0, Fe:0, Mn:0, Zn:0, Cu:0, B:0, Mo:0, Cl:0, Na:0, Si:0, Ni:0, Co:0, V:0, price:70000, unit:'10L', rate:'2ml/㎡', density:1.1, concentration:10, npkRatio:'1-1-1', stock: 15, lowStockAlertEnabled: false, description: '빠른 흡수가 특징인 액상 비료로, 뿌리 기능이 저하되었거나 스트레스 시기에 즉각적인 영양 공급이 필요할 때 효과적입니다.' }
 ];
 
-// Ensure 'admin' exists
+// Ensure 'admin' exists in Firestore
 const seedAdminIfNeeded = async () => {
     try {
         const adminRef = doc(db, "users", "admin");
         const adminSnap = await getDoc(adminRef);
+
         if (!adminSnap.exists()) {
-            await setDoc(adminRef, { username: 'admin', password: 'admin', golfCourse: '관리자', role: 'admin', isApproved: true });
+            await setDoc(adminRef, {
+                username: 'admin',
+                password: 'admin',
+                golfCourse: '관리자',
+                role: 'admin',
+                isApproved: true
+            });
+            
             const adminDataRef = doc(db, "appData", "admin");
-            if (!(await getDoc(adminDataRef)).exists()) {
-                await setDoc(adminDataRef, { logs: [], fertilizers: initialFertilizers, settings: DEFAULT_USER_SETTINGS, notificationSettings: { enabled: false, email: '', threshold: 10 } });
+            const adminDataSnap = await getDoc(adminDataRef);
+            if (!adminDataSnap.exists()) {
+                await setDoc(adminDataRef, {
+                    logs: [],
+                    fertilizers: initialFertilizers,
+                    settings: DEFAULT_USER_SETTINGS,
+                    notificationSettings: { enabled: false, email: '', threshold: 10 }
+                });
             }
         }
-    } catch (e) { console.error("Error seeding admin:", e); }
+    } catch (e) {
+        console.error("Error seeding admin:", e);
+    }
 };
 
 // --- User Management ---
@@ -66,61 +82,96 @@ export const validateUser = async (username: string, password_provided: string):
     try {
         const userRef = doc(db, "users", username);
         const userSnap = await getDoc(userRef);
+
         if (userSnap.exists()) {
             const user = userSnap.data() as User;
+            
             if (user.password === password_provided) {
-                // Check approval status (mapped to isApproved in Firestore)
-                if (user.role !== 'admin' && !user.isApproved) return 'pending';
-                const { password, ...safeUser } = user;
-                return safeUser;
+                // Check approval status
+                if (user.role !== 'admin' && !user.isApproved) {
+                    return 'pending';
+                }
+                const { password, ...userWithoutPassword } = user;
+                return userWithoutPassword;
             }
         }
         return null;
-    } catch (e) { return null; }
+    } catch (e) {
+        console.error("Login error:", e);
+        return null;
+    }
 };
 
 export const createUser = async (username: string, password_provided: string, golfCourse: string): Promise<User | 'exists' | 'invalid'> => {
-    if (!username.trim() || !password_provided || !golfCourse.trim()) return 'invalid';
+    if (!username.trim() || !password_provided || !golfCourse.trim()) {
+        return 'invalid';
+    }
+    
     try {
         const userRef = doc(db, "users", username);
-        if ((await getDoc(userRef)).exists()) return 'exists';
+        const userSnap = await getDoc(userRef);
+
+        if (userSnap.exists()) {
+            return 'exists';
+        }
 
         const newUser: User = { 
             username, 
             password: password_provided, 
             golfCourse, 
-            role: 'user', 
-            isApproved: false // Default to unapproved
+            role: 'user', // Default role
+            isApproved: false // Default approval status
         };
         await setDoc(userRef, newUser);
         
+        // Initialize App Data document for this user
         const dataRef = doc(db, "appData", username);
-        await setDoc(dataRef, { logs: [], fertilizers: [], settings: DEFAULT_USER_SETTINGS, notificationSettings: { enabled: false, email: '', threshold: 10 } });
+        await setDoc(dataRef, {
+            logs: [],
+            fertilizers: [], 
+            settings: DEFAULT_USER_SETTINGS,
+            notificationSettings: { enabled: false, email: '', threshold: 10 }
+        });
 
-        const { password, ...safeUser } = newUser;
-        return safeUser;
-    } catch (e) { console.error("Signup error:", e); return 'invalid'; }
+        const { password, ...userWithoutPassword } = newUser;
+        return userWithoutPassword;
+    } catch (e) {
+        console.error("Signup error:", e);
+        return 'invalid';
+    }
 };
 
 export const approveUser = async (username: string): Promise<void> => {
     try {
         const userRef = doc(db, "users", username);
         await updateDoc(userRef, { isApproved: true });
-    } catch (e) { console.error("Approval error", e); }
+    } catch (e) {
+        console.error("Approval error", e);
+    }
+};
+
+export const getUser = async (username: string): Promise<User | null> => {
+    try {
+        const userRef = doc(db, "users", username);
+        const userSnap = await getDoc(userRef);
+        if (userSnap.exists()) {
+            const user = userSnap.data() as User;
+            const { password, ...userWithoutPassword } = user;
+            return userWithoutPassword;
+        }
+        return null;
+    } catch (e) {
+        return null;
+    }
 };
 
 export const deleteUser = async (username: string): Promise<void> => {
     try {
         await deleteDoc(doc(db, "users", username));
         await deleteDoc(doc(db, "appData", username));
-    } catch (e) { console.error("Delete user error", e); }
-};
-
-export const getUser = async (username: string): Promise<User | null> => {
-    try {
-        const userSnap = await getDoc(doc(db, "users", username));
-        return userSnap.exists() ? (userSnap.data() as User) : null;
-    } catch { return null; }
+    } catch (e) {
+        console.error("Delete user error", e);
+    }
 };
 
 // --- Real-time Subscriptions ---
@@ -131,17 +182,20 @@ export const subscribeToUsers = (onUpdate: (users: User[]) => void): Unsubscribe
         const users = snapshot.docs.map(d => {
             const u = d.data() as User;
             const { password, ...safeUser } = u;
-            return safeUser;
+            return safeUser as User;
         });
         onUpdate(users);
     });
 };
 
 export const subscribeToAppData = (username: string, onUpdate: (data: Partial<AppData> | null) => void): Unsubscribe => {
-    return onSnapshot(doc(db, "appData", username), (docSnap) => {
+    const docRef = doc(db, "appData", username);
+    return onSnapshot(docRef, (docSnap) => {
         if (docSnap.exists()) {
             const data = docSnap.data() as Partial<AppData>;
-            if (data.settings) data.settings = { ...DEFAULT_USER_SETTINGS, ...data.settings };
+            if (data.settings) {
+                data.settings = { ...DEFAULT_USER_SETTINGS, ...data.settings };
+            }
             onUpdate(data);
         } else {
             onUpdate(null);
@@ -150,77 +204,127 @@ export const subscribeToAppData = (username: string, onUpdate: (data: Partial<Ap
 };
 
 export const subscribeToAllAppData = (onUpdate: (data: Record<string, Partial<AppData>>) => void): Unsubscribe => {
-    return onSnapshot(query(collection(db, "appData")), (snapshot) => {
+    const q = query(collection(db, "appData"));
+    return onSnapshot(q, (snapshot) => {
         const data: Record<string, Partial<AppData>> = {};
-        snapshot.forEach(doc => { data[doc.id] = doc.data() as Partial<AppData>; });
+        snapshot.forEach(doc => {
+            data[doc.id] = doc.data() as Partial<AppData>;
+        });
         onUpdate(data);
     });
 };
 
-// --- Data Accessors (Fallback/Static) ---
+// --- Save/Load Functions (Fallback) ---
 
 export const getFertilizers = async (username: string): Promise<Fertilizer[]> => {
+    await seedAdminIfNeeded();
     try {
-        const docSnap = await getDoc(doc(db, "appData", username));
+        const docRef = doc(db, "appData", username);
+        const docSnap = await getDoc(docRef);
         const fertilizers = docSnap.exists() ? (docSnap.data() as AppData).fertilizers : [];
-        if (username === 'admin' && (!fertilizers || fertilizers.length === 0)) return initialFertilizers;
+        if (username === 'admin' && (!fertilizers || fertilizers.length === 0)) {
+            return initialFertilizers;
+        }
         return fertilizers || [];
-    } catch { return []; }
+    } catch {
+        return [];
+    }
 };
 
 export const saveFertilizers = async (username: string, fertilizers: Fertilizer[]): Promise<void> => {
-    const ref = doc(db, "appData", username);
-    try { await updateDoc(ref, { fertilizers }); } catch { await setDoc(ref, { fertilizers }, { merge: true }); }
+    try {
+        const docRef = doc(db, "appData", username);
+        await updateDoc(docRef, { fertilizers });
+    } catch (e) {
+        const docRef = doc(db, "appData", username);
+        await setDoc(docRef, { fertilizers }, { merge: true });
+    }
 };
 
 export const getLog = async (username: string): Promise<LogEntry[]> => {
     try {
-        const docSnap = await getDoc(doc(db, "appData", username));
+        const docRef = doc(db, "appData", username);
+        const docSnap = await getDoc(docRef);
         return docSnap.exists() ? (docSnap.data() as AppData).logs || [] : [];
-    } catch { return []; }
+    } catch {
+        return [];
+    }
 };
 
 export const saveLog = async (username: string, log: LogEntry[]): Promise<void> => {
-    const ref = doc(db, "appData", username);
-    try { await updateDoc(ref, { logs: log }); } catch { await setDoc(ref, { logs: log }, { merge: true }); }
+    try {
+        const docRef = doc(db, "appData", username);
+        await updateDoc(docRef, { logs: log });
+    } catch (e) {
+        const docRef = doc(db, "appData", username);
+        await setDoc(docRef, { logs: log }, { merge: true });
+    }
 };
 
 export const getSettings = async (username: string): Promise<UserSettings> => {
     try {
-        const docSnap = await getDoc(doc(db, "appData", username));
-        if (docSnap.exists()) return { ...DEFAULT_USER_SETTINGS, ...docSnap.data().settings };
+        const docRef = doc(db, "appData", username);
+        const docSnap = await getDoc(docRef);
+        
+        if (docSnap.exists()) {
+            const data = (docSnap.data() as AppData).settings;
+            return { ...DEFAULT_USER_SETTINGS, ...data };
+        }
         return DEFAULT_USER_SETTINGS;
-    } catch { return DEFAULT_USER_SETTINGS; }
+    } catch (e) {
+        return DEFAULT_USER_SETTINGS;
+    }
 };
 
 export const saveSettings = async (username: string, settings: UserSettings): Promise<void> => {
-    const ref = doc(db, "appData", username);
-    try { await updateDoc(ref, { settings }); } catch { await setDoc(ref, { settings }, { merge: true }); }
+    try {
+        const docRef = doc(db, "appData", username);
+        await updateDoc(docRef, { settings });
+    } catch (e) {
+        const docRef = doc(db, "appData", username);
+        await setDoc(docRef, { settings }, { merge: true });
+    }
 };
 
 export const getAllUsersData = async (): Promise<UserDataSummary[]> => {
-    // For initial load without subscription
     try {
-        const userSnapshot = await getDocs(collection(db, "users"));
+        const usersCol = collection(db, "users");
+        const userSnapshot = await getDocs(usersCol);
         const allData: UserDataSummary[] = [];
+
         for (const userDoc of userSnapshot.docs) {
             const userData = userDoc.data() as User;
-            if (userData.username === 'admin') continue;
-            const appDataSnap = await getDoc(doc(db, "appData", userData.username));
+            const username = userData.username;
+            
+            if (username === 'admin') continue;
+
+            const docRef = doc(db, "appData", username);
+            const appDataSnap = await getDoc(docRef);
             const appData = appDataSnap.exists() ? (appDataSnap.data() as AppData) : null;
             const logs = appData?.logs || [];
+            const fertilizers = appData?.fertilizers || [];
+            
+            const totalCost = logs.reduce((sum: number, entry: LogEntry) => sum + (entry.totalCost || 0), 0);
+            
+            let lastActivity: string | null = null;
+            if (logs.length > 0) {
+                lastActivity = [...logs].sort((a: LogEntry, b: LogEntry) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].date;
+            }
+
             allData.push({
                 username: userData.username,
                 golfCourse: userData.golfCourse || '미지정',
                 logCount: logs.length,
-                totalCost: logs.reduce((sum, entry) => sum + (entry.totalCost || 0), 0),
-                lastActivity: logs.length > 0 ? logs[0].date : null,
-                logs: logs,
-                fertilizers: appData?.fertilizers || [],
+                totalCost,
+                lastActivity,
+                logs: [...logs].sort((a: LogEntry, b: LogEntry) => new Date(b.date).getTime() - new Date(a.date).getTime()),
+                fertilizers,
                 isApproved: userData.isApproved ?? true,
                 role: userData.role
             });
         }
         return allData;
-    } catch { return []; }
+    } catch (e) {
+        return [];
+    }
 };

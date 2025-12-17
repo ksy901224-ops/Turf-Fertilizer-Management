@@ -26,7 +26,6 @@ exports.sendAdminNotificationOnSignup = functions.firestore
     const newUser = snap.data();
     
     // Requirement: Process only if approved is false (new signups are usually false)
-    // Note: Use 'isApproved' or 'approved' depending on your DB schema. API uses 'isApproved'.
     const isUnapproved = newUser.isApproved === false || newUser.approved === false;
 
     if (!isUnapproved) {

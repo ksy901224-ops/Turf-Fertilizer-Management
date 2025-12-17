@@ -319,13 +319,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                     <div className="flex items-center gap-4">
                         <button 
                             onClick={scrollToPending}
-                            className={`relative p-2 rounded-full transition-colors ${pendingUsersList.length > 0 ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'text-slate-400'}`}
+                            className={`flex items-center gap-2 p-2 rounded-md transition-colors ${pendingUsersList.length > 0 ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'text-slate-400 hover:bg-slate-100'}`}
                             title="승인 대기 알림"
                         >
-                            <BellIcon />
+                            <div className="relative">
+                                <BellIcon className="w-6 h-6" />
+                                {pendingUsersList.length > 0 && (
+                                    <span className="absolute -top-1 -right-1 flex h-3 w-3">
+                                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                      <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
+                                    </span>
+                                )}
+                            </div>
                             {pendingUsersList.length > 0 && (
-                                <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-[10px] font-bold text-white shadow-sm animate-pulse">
-                                    {pendingUsersList.length}
+                                <span className="text-sm font-bold">
+                                    승인 대기: {pendingUsersList.length}명
                                 </span>
                             )}
                         </button>
@@ -440,7 +448,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             
             {selectedUserForDetail && <UserDetailModal userData={selectedUserForDetail} onClose={() => setSelectedUserForDetail(null)} onDataUpdate={() => {}} />}
             
-            {/* Add Fertilizer Modal & Bulk Modal omitted for brevity as they are unchanged from previous logic */}
             {isAddFertilizerModalOpen && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4" onClick={() => setIsAddFertilizerModalOpen(false)}>
                     <div className="bg-white rounded-lg p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>

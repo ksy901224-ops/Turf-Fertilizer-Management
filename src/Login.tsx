@@ -46,15 +46,18 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     
     if (!username || !password || !golfCourse) {
         setError('모든 필드를 입력해주세요.');
+        setIsLoading(false);
         return;
     }
 
     if (password !== confirmPassword) {
       setError('비밀번호가 일치하지 않습니다.');
+      setIsLoading(false);
       return;
     }
     if (username.trim().toLowerCase() === 'admin') {
         setError('\'admin\'은 예약된 사용자 이름입니다. 다른 이름을 사용해주세요.');
+        setIsLoading(false);
         return;
     }
     
@@ -69,7 +72,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
             setError('사용자 이름, 골프장 명, 비밀번호를 모두 입력해주세요.');
         } else if (result) {
             // Successful signup
-            setInfoMessage('회원가입이 완료되었습니다. 관리자 승인 후 로그인이 가능합니다.');
+            setInfoMessage('회원가입 신청이 완료되었습니다. 관리자 승인 후 로그인이 가능합니다.');
             setIsSigningUp(false); // Switch back to login view
             setPassword('');
             setConfirmPassword('');
