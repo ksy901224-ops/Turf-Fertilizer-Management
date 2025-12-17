@@ -1,5 +1,4 @@
 
-// ... (imports same as before)
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import * as api from './api';
 import * as XLSX from 'xlsx';
@@ -15,7 +14,7 @@ interface AdminDashboardProps {
     onLogout: () => void;
 }
 
-// ... (Helper for Excel Export - same as before)
+// --- Helper for Excel Export ---
 const exportUserLogsToExcel = (userData: UserDataSummary) => {
     if (!userData.logs || userData.logs.length === 0) {
         alert(`${userData.username}님의 기록된 데이터가 없습니다.`);
@@ -35,7 +34,7 @@ const exportUserLogsToExcel = (userData: UserDataSummary) => {
     XLSX.writeFile(workbook, `${userData.username}_${userData.golfCourse}_시비일지.xlsx`);
 };
 
-// ... (UserDetailModal - same logic, kept for brevity)
+// --- User Detail Modal ---
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
 
 interface UserDetailModalProps {
@@ -44,61 +43,169 @@ interface UserDetailModalProps {
     onDataUpdate: () => void; 
 }
 
-const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose }) => {
-    // ... (UserDetailModal content unchanged, simplified for this block)
+const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose, onDataUpdate }) => {
+    const [activeTab, setActiveTab] = useState<'analytics' | 'logs'>('analytics');
+    const [statsView, setStatsView] = useState<'monthly' | 'daily' | 'yearly'>('monthly');
+    const [selectedYear, setSelectedYear] = useState<string>('all');
     const [logs, setLogs] = useState<LogEntry[]>(userData.logs || []);
-    // ...
+    const [editingLogId, setEditingLogId] = useState<string | null>(null);
+    const [editFormData, setEditFormData] = useState<Partial<LogEntry>>({});
+
+    useEffect(() => { setLogs(userData.logs || []); }, [userData]);
+
+    const productStats = useMemo(() => {
+        const stats: Record<string, { count: number, totalCost: number, totalAmount: number, unitHint: string, name: string }> = {};
+        logs.forEach(log => {
+            if (!stats[log.product]) stats[log.product] = { count: 0, totalCost: 0, totalAmount: 0, unitHint: '', name: log.product };
+            stats[log.product].count += 1; stats[log.product].totalCost += log.totalCost;
+            stats[log.product].totalAmount += (log.area * log.applicationRate) / 1000;
+            if (!stats[log.product].unitHint) stats[log.product].unitHint = log.applicationUnit.includes('ml') ? 'L' : 'kg';
+        });
+        return Object.values(stats).sort((a, b) => b.totalCost - a.totalCost);
+    }, [logs]);
+    const mostFrequentProduct = useMemo(() => productStats.length === 0 ? null : [...productStats].sort((a, b) => b.count - a.count)[0], [productStats]);
+    const chartDataProductCost = useMemo(() => productStats.slice(0, 5).map(p => ({ name: p.name, value: p.totalCost })), [productStats]);
+    
+    const timeStats = useMemo(() => {
+        const monthly: Record<string, number> = {}; const yearly: Record<string, number> = {}; const daily: Record<string, number> = {};
+        logs.forEach(log => {
+            const date = new Date(log.date); const y = date.getFullYear().toString();
+            if (selectedYear !== 'all' && y !== selectedYear) return;
+            const m = `${y}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            yearly[y] = (yearly[y] || 0) + log.totalCost; monthly[m] = (monthly[m] || 0) + log.totalCost; daily[log.date] = (daily[log.date] || 0) + log.totalCost;
+        });
+        return { 
+            monthly: Object.entries(monthly).map(([k, v]) => ({ period: k, cost: v })).sort((a, b) => a.period.localeCompare(b.period)),
+            yearly: Object.entries(yearly).map(([k, v]) => ({ period: k, cost: v })).sort((a, b) => a.period.localeCompare(b.period)),
+            daily: Object.entries(daily).map(([k, v]) => ({ period: k, cost: v })).sort((a, b) => a.period.localeCompare(b.period))
+        };
+    }, [logs, selectedYear]);
+    const annualUsageStats = useMemo(() => {
+        const stats: Record<string, { totalAmount: number, unit: string, cost: number, count: number }> = {};
+        logs.forEach(log => {
+            const date = new Date(log.date); const y = date.getFullYear().toString();
+            if (selectedYear !== 'all' && y !== selectedYear) return;
+            if (!stats[log.product]) { const unit = log.applicationUnit.includes('ml') ? 'L' : 'kg'; stats[log.product] = { totalAmount: 0, unit, cost: 0, count: 0 }; }
+            const amount = (log.area * log.applicationRate) / 1000;
+            stats[log.product].totalAmount += amount; stats[log.product].cost += log.totalCost; stats[log.product].count += 1;
+        });
+        return Object.entries(stats).map(([name, data]) => ({ name, ...data })).sort((a, b) => b.totalAmount - a.totalAmount);
+    }, [logs, selectedYear]);
+    const availableYears = useMemo(() => Array.from(new Set(logs.map(l => new Date(l.date).getFullYear().toString()))).sort().reverse(), [logs]);
+    const formatXAxis = (tick: string) => statsView === 'monthly' || statsView === 'daily' ? tick.slice(5) : tick;
+
+    const handleDeleteLog = async (logId: string) => {
+        if(window.confirm('삭제하시겠습니까?')) {
+            const updatedLogs = logs.filter(l => l.id !== logId);
+            setLogs(updatedLogs);
+            await api.saveLog(userData.username, updatedLogs);
+            onDataUpdate();
+        }
+    };
+    const startEditingLog = (log: LogEntry) => { setEditingLogId(log.id); setEditFormData({ ...log }); };
+    const saveEditedLog = async () => {
+        if (!editingLogId) return;
+        const updatedLogs = logs.map(l => l.id === editingLogId ? { ...l, ...editFormData } as LogEntry : l);
+        setLogs(updatedLogs);
+        await api.saveLog(userData.username, updatedLogs);
+        setEditingLogId(null); setEditFormData({});
+        onDataUpdate();
+    };
+
     return (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4" onClick={onClose}>
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-5xl max-h-[95vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
                 <div className="p-5 border-b flex justify-between items-center bg-slate-50">
                     <div>
                         <h2 className="text-xl font-bold text-slate-800">{userData.username} ({userData.golfCourse})</h2>
-                        <span className={`text-xs px-2 py-1 rounded-full ${userData.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'}`}>
-                            {userData.role === 'admin' ? '관리자' : '사용자'}
-                        </span>
+                        <span className={`text-xs px-2 py-1 rounded-full ${userData.role === 'admin' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'}`}>{userData.role === 'admin' ? '관리자' : '사용자'}</span>
                     </div>
-                    <div className="flex gap-2"><button onClick={onClose}><CloseIcon /></button></div>
+                    <div className="flex gap-2"><button onClick={() => exportUserLogsToExcel({ ...userData, logs })} className="flex items-center gap-1 px-3 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded"><DownloadIcon className="w-4 h-4"/> 엑셀 저장</button><button onClick={onClose}><CloseIcon /></button></div>
                 </div>
-                {/* ... existing modal content ... */}
+                <div className="flex border-b bg-white">
+                    <button className={`flex-1 py-3 font-bold ${activeTab==='analytics'?'text-blue-600 border-b-2 border-blue-600':'text-slate-500'}`} onClick={()=>setActiveTab('analytics')}>📊 데이터 분석</button>
+                    <button className={`flex-1 py-3 font-bold ${activeTab==='logs'?'text-purple-600 border-b-2 border-purple-600':'text-slate-500'}`} onClick={()=>setActiveTab('logs')}>📝 일지 관리</button>
+                </div>
+                <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                    {activeTab === 'analytics' ? (
+                        <>
+                            <div className="grid grid-cols-4 gap-4">
+                                <div className="bg-blue-50 p-4 rounded border-blue-100"><h4 className="text-xs font-bold">비용</h4><p className="text-xl font-bold">{Math.round(userData.totalCost).toLocaleString()}</p></div>
+                                <div className="bg-green-50 p-4 rounded border-green-100"><h4 className="text-xs font-bold">최빈 사용</h4><p className="truncate font-bold">{mostFrequentProduct?.name}</p></div>
+                                <div className="bg-orange-50 p-4 rounded border-orange-100"><h4 className="text-xs font-bold">최고 지출</h4><p className="truncate font-bold">{productStats[0]?.name}</p></div>
+                                <div className="bg-purple-50 p-4 rounded border-purple-100"><h4 className="text-xs font-bold">제품 수</h4><p className="text-xl font-bold">{productStats.length}</p></div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-6">
+                                <div className="bg-white p-4 rounded border"><div className="h-64"><ResponsiveContainer><BarChart data={timeStats[statsView]}><XAxis dataKey="period" tickFormatter={formatXAxis}/><YAxis/><Tooltip/><Bar dataKey="cost" fill="#3b82f6"/></BarChart></ResponsiveContainer></div></div>
+                                <div className="bg-white p-4 rounded border"><div className="h-64"><ResponsiveContainer><PieChart><Pie data={chartDataProductCost} cx="50%" cy="50%" innerRadius={40} outerRadius={80} fill="#8884d8" dataKey="value" paddingAngle={5}>{chartDataProductCost.map((entry, index) => (<Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />))}</Pie><Tooltip/><Legend/></PieChart></ResponsiveContainer></div></div>
+                            </div>
+                            <div className="bg-white border rounded overflow-hidden"><div className="p-4 bg-slate-50 font-bold border-b">연간 사용량</div><div className="max-h-60 overflow-y-auto"><table className="w-full text-sm"><thead><tr><th>제품</th><th className="text-right">량</th><th className="text-right">비용</th></tr></thead><tbody>{annualUsageStats.map((i,idx)=><tr key={idx}><td className="p-2">{i.name}</td><td className="p-2 text-right">{i.totalAmount.toFixed(1)}{i.unit}</td><td className="p-2 text-right">{Math.round(i.cost).toLocaleString()}</td></tr>)}</tbody></table></div></div>
+                        </>
+                    ) : (
+                        <div className="bg-white rounded border overflow-hidden">
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-slate-100 font-bold"><tr><th className="p-3">날짜</th><th className="p-3">제품</th><th className="p-3 text-right">관리</th></tr></thead>
+                                    <tbody>{logs.map(log => (
+                                        <tr key={log.id} className="border-b hover:bg-slate-50">
+                                            {editingLogId === log.id ? (
+                                                <><td className="p-2"><input type="date" value={editFormData.date} onChange={e=>setEditFormData({...editFormData, date:e.target.value})} className="border p-1"/></td><td className="p-2"><input value={editFormData.product} onChange={e=>setEditFormData({...editFormData, product:e.target.value})} className="border p-1 w-full"/></td><td className="p-2 text-right"><button onClick={saveEditedLog} className="text-green-600 mr-2">저장</button><button onClick={()=>setEditingLogId(null)}>취소</button></td></>
+                                            ) : (
+                                                <><td className="p-3">{log.date}</td><td className="p-3">{log.product}</td><td className="p-3 text-right"><button onClick={()=>startEditingLog(log)} className="mr-2"><PencilIcon className="w-4 h-4 text-blue-500"/></button><button onClick={()=>handleDeleteLog(log.id)}><TrashIcon className="w-4 h-4 text-red-500"/></button></td></>
+                                            )}
+                                        </tr>
+                                    ))}</tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
     );
 };
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
-    const [users, setUsers] = useState<User[]>([]);
-    const [appDataMap, setAppDataMap] = useState<Record<string, any>>({});
+    const [allUsersData, setAllUsersData] = useState<UserDataSummary[]>([]);
     const [masterFertilizers, setMasterFertilizers] = useState<Fertilizer[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     
-    // ... (rest of states same as before)
     const [selectedPendingUsers, setSelectedPendingUsers] = useState<Set<string>>(new Set());
     const [activeTab, setActiveTab] = useState<'users' | 'fertilizers'>('users');
     const [selectedUserForDetail, setSelectedUserForDetail] = useState<UserDataSummary | null>(null);
+    
+    // Fertilizer Mgmt
     const [isAddFertilizerModalOpen, setIsAddFertilizerModalOpen] = useState(false);
     const [editingFertilizerIndex, setEditingFertilizerIndex] = useState<number | null>(null);
     const [newFertilizer, setNewFertilizer] = useState<Partial<Fertilizer>>({ type: '완효성', usage: '그린' });
     const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
     const [bulkPreviewData, setBulkPreviewData] = useState<Fertilizer[]>([]);
+
+    // Search/Sort
     const [userSearchTerm, setUserSearchTerm] = useState('');
     const [userSortField, setUserSortField] = useState<keyof UserDataSummary>('lastActivity');
     const [userSortOrder, setUserSortOrder] = useState<'asc' | 'desc'>('desc');
+
+    // AI
     const [aiInputText, setAiInputText] = useState('');
     const [isAiFillLoading, setIsAiFillLoading] = useState(false);
     const [aiSmartTab, setAiSmartTab] = useState<'text' | 'file'>('text');
     const [aiError, setAiError] = useState<string | null>(null);
     const [autoSaveAfterAi, setAutoSaveAfterAi] = useState(false);
+
+    // Refs
     const pendingSectionRef = useRef<HTMLElement>(null);
 
     // --- Real-time Subscription ---
     useEffect(() => {
         setIsLoading(true);
-        const unsubUsers = api.subscribeToUsers((updatedUsers) => {
-            setUsers(updatedUsers);
+        const unsubUsers = api.subscribeToUsers(async (users) => {
+            // We need detailed data for summaries
+            const fullData = await api.getAllUsersData();
+            setAllUsersData(fullData);
         });
         const unsubAppData = api.subscribeToAllAppData((updatedData) => {
-            setAppDataMap(updatedData);
+            // When app data changes, refresh master fertilizers if admin data changed
             const adminData = updatedData['admin'];
             if (adminData && adminData.fertilizers) {
                 setMasterFertilizers(adminData.fertilizers);
@@ -109,27 +216,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
     }, []);
 
     // Derived Data
-    const allUsersData: UserDataSummary[] = useMemo(() => {
-        return users.filter(u => u.username !== 'admin').map(u => {
-                const data = appDataMap[u.username] || { logs: [], fertilizers: [] };
-                const logs = data.logs || [];
-                const totalCost = logs.reduce((sum: number, l: LogEntry) => sum + (l.totalCost || 0), 0);
-                const lastActivity = logs.length > 0 ? [...logs].sort((a: LogEntry, b: LogEntry) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].date : null;
-                return {
-                    username: u.username,
-                    golfCourse: u.golfCourse,
-                    isApproved: u.isApproved ?? false,
-                    role: u.role || 'user',
-                    logCount: logs.length,
-                    totalCost,
-                    lastActivity,
-                    logs: logs.sort((a: LogEntry, b: LogEntry) => new Date(b.date).getTime() - new Date(a.date).getTime()),
-                    fertilizers: data.fertilizers || []
-                };
-            });
-    }, [users, appDataMap]);
-
-    // ... (rest of filtering logic same)
     const pendingUsersList = useMemo(() => allUsersData.filter(u => !u.isApproved), [allUsersData]);
     const approvedUsersList = useMemo(() => allUsersData.filter(u => u.isApproved), [allUsersData]);
 
@@ -151,7 +237,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         return data;
     }, [approvedUsersList, userSearchTerm, userSortField, userSortOrder]);
 
-    // Actions (unchanged, just ensure api calls match)
+    // Actions
     const handleApproveUser = async (username: string) => {
         if (window.confirm(`${username} 승인?`)) {
             await api.approveUser(username);
@@ -185,7 +271,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             pendingSectionRef.current.scrollIntoView({ behavior: 'smooth' });
         }
     };
-    // ... (Fertilizer actions & AI handler unchanged)
+
+    // Fertilizer actions...
     const handleSaveFertilizer = async (dataOverride?: Partial<Fertilizer>) => {
         const dataToSave = dataOverride || newFertilizer;
         if (!dataToSave.name) return;
@@ -209,10 +296,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             await api.saveFertilizers('admin', newList);
         }
     };
+    
+    // AI Request Handler
     const processAiRequest = async (promptText: string) => {
         setIsAiFillLoading(true); setAiError(null);
         try {
-            const ai = new GoogleGenAI({ apiKey: import.meta.env.VITE_API_KEY || process.env.API_KEY });
+            // Safely access env var with fallback
+            // @ts-ignore
+            const apiKey = import.meta.env.VITE_API_KEY || (process.env.API_KEY as string);
+            const ai = new GoogleGenAI({ apiKey });
             const prompt = `Analyze fertilizer info and return JSON. Input: ${promptText}`;
             const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: { parts: [{ text: prompt }] } });
             const text = response.text?.replace(/```json/g, '').replace(/```/g, '').trim();
@@ -221,7 +313,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 if (Array.isArray(data)) { setBulkPreviewData(data); setIsBulkModalOpen(true); setIsAddFertilizerModalOpen(false); }
                 else { setNewFertilizer({...newFertilizer, ...data}); if(autoSaveAfterAi) await handleSaveFertilizer({...newFertilizer, ...data}); }
             }
-        } catch(e) { setAiError('AI Error'); } finally { setIsAiFillLoading(false); }
+        } catch(e) { 
+            console.error(e);
+            setAiError('AI Analysis Failed'); 
+        } finally { setIsAiFillLoading(false); }
     };
 
     if (isLoading) return <LoadingSpinner />;
@@ -258,7 +353,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
 
                 {pendingUsersList.length > 0 && (
                     <section ref={pendingSectionRef} className="bg-amber-50 border-l-4 border-amber-500 p-6 rounded-r-lg shadow-md animate-fadeIn scroll-mt-24">
-                        {/* Pending list UI ... */}
                         <div className="flex justify-between items-center mb-4">
                             <h2 className="text-xl font-bold text-amber-800">⏳ 승인 대기 중인 사용자 ({pendingUsersList.length})</h2>
                             <div className="flex gap-2">
@@ -345,7 +439,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                             </div>
                         ) : (
                             <div>
-                                {/* Fertilizer Management UI ... (same as before) */}
                                 <div className="flex justify-between items-center mb-4">
                                     <h3 className="font-bold text-slate-700">마스터 비료 ({masterFertilizers.length})</h3>
                                     <button onClick={() => { setEditingFertilizerIndex(null); setIsAddFertilizerModalOpen(true); }} className="flex items-center gap-2 bg-green-600 text-white px-3 py-2 rounded text-sm font-bold"><PlusIcon /> 추가</button>
@@ -370,7 +463,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             </div>
             
             {selectedUserForDetail && <UserDetailModal userData={selectedUserForDetail} onClose={() => setSelectedUserForDetail(null)} onDataUpdate={() => {}} />}
-            {/* Add Fertilizer Modal */}
+            
             {isAddFertilizerModalOpen && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4" onClick={() => setIsAddFertilizerModalOpen(false)}>
                     <div className="bg-white rounded-lg p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
