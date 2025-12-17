@@ -15,10 +15,23 @@ service cloud.firestore {
              get(/databases/$(database)/documents/users/$(userId)).data.isApproved == true;
     }
 
-    // Users Collection: Users access own profile, Admin accesses all
+    // Users Collection
     match /users/{userId} {
-      allow read, write: if request.auth != null && (
-        request.auth.uid == userId || isAdmin()
+      // Allow reading: User can read own profile; Admin can read all
+      allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
+      
+      // Allow creation: User can create own profile, but strict initial values
+      // We assume client sends {isApproved: false, role: 'user', ...}
+      allow create: if request.auth != null && request.auth.uid == userId;
+
+      // Allow update: 
+      // 1. Admin can update anything (e.g., approve users)
+      // 2. User can update their own profile BUT NOT 'isApproved' or 'role' fields
+      allow update: if request.auth != null && (
+        isAdmin() || 
+        (request.auth.uid == userId 
+         && request.resource.data.isApproved == resource.data.isApproved 
+         && request.resource.data.role == resource.data.role)
       );
     }
 

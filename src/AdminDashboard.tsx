@@ -4,7 +4,7 @@ import * as api from './api';
 import * as XLSX from 'xlsx';
 import { GoogleGenAI } from '@google/genai';
 import { UserDataSummary, Fertilizer, LogEntry, User } from './types';
-import { LogoutIcon, DashboardIcon, UsersIcon, PlusIcon, TrashIcon, CloseIcon, ClipboardListIcon, CameraIcon, DocumentSearchIcon, UploadIcon, SparklesIcon, DownloadIcon, PencilIcon } from './icons';
+import { LogoutIcon, DashboardIcon, UsersIcon, PlusIcon, TrashIcon, CloseIcon, ClipboardListIcon, CameraIcon, DocumentSearchIcon, UploadIcon, SparklesIcon, DownloadIcon, PencilIcon, BellIcon } from './icons';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { FERTILIZER_TYPE_GROUPS } from './constants';
 import { LoadingSpinner } from './LoadingSpinner';
@@ -34,18 +34,16 @@ const exportUserLogsToExcel = (userData: UserDataSummary) => {
     XLSX.writeFile(workbook, `${userData.username}_${userData.golfCourse}_시비일지.xlsx`);
 };
 
-// ... (UserDetailModal - same logic, updated typing if needed) ...
-// Included directly to ensure file completeness
+// ... (UserDetailModal - same logic) ...
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d'];
 
 interface UserDetailModalProps {
     userData: UserDataSummary;
     onClose: () => void;
-    onDataUpdate: () => void; // Keeps the signature, even if real-time makes manual refresh less critical
+    onDataUpdate: () => void; 
 }
 
 const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose }) => {
-    // ... (Detail Modal Logic remains mostly display-only, handling logs) ...
     const [activeTab, setActiveTab] = useState<'analytics' | 'logs'>('analytics');
     const [statsView, setStatsView] = useState<'monthly' | 'daily' | 'yearly'>('monthly');
     const [selectedYear, setSelectedYear] = useState<string>('all');
@@ -55,7 +53,6 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose }) 
 
     useEffect(() => { setLogs(userData.logs || []); }, [userData]);
 
-    // ... (Calculations: productStats, timeStats, etc. - Identical logic) ...
     const productStats = useMemo(() => {
         const stats: Record<string, { count: number, totalCost: number, totalAmount: number, unitHint: string, name: string }> = {};
         logs.forEach(log => {
@@ -67,7 +64,6 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose }) 
         return Object.values(stats).sort((a, b) => b.totalCost - a.totalCost);
     }, [logs]);
     const mostFrequentProduct = useMemo(() => productStats.length === 0 ? null : [...productStats].sort((a, b) => b.count - a.count)[0], [productStats]);
-    const chartDataProductCost = useMemo(() => productStats.slice(0, 5).map(p => ({ name: p.name, value: p.totalCost })), [productStats]);
     const timeStats = useMemo(() => {
         const monthly: Record<string, number> = {}; const yearly: Record<string, number> = {}; const daily: Record<string, number> = {};
         logs.forEach(log => {
@@ -85,12 +81,10 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose }) 
     const availableYears = useMemo(() => Array.from(new Set(logs.map(l => new Date(l.date).getFullYear().toString()))).sort().reverse(), [logs]);
     const formatXAxis = (tick: string) => statsView === 'monthly' || statsView === 'daily' ? tick.slice(5) : tick;
 
-    // Log Editing
     const handleDeleteLog = async (logId: string) => {
         if(window.confirm('삭제하시겠습니까?')) {
             const updatedLogs = logs.filter(l => l.id !== logId);
             await api.saveLog(userData.username, updatedLogs);
-            // Real-time listener in parent will update 'userData', triggering useEffect above
         }
     };
     const startEditingLog = (log: LogEntry) => { setEditingLogId(log.id); setEditFormData({ ...log }); };
@@ -151,7 +145,6 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({ userData, onClose }) 
 };
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }) => {
-    // State
     const [users, setUsers] = useState<User[]>([]);
     const [appDataMap, setAppDataMap] = useState<Record<string, any>>({});
     const [masterFertilizers, setMasterFertilizers] = useState<Fertilizer[]>([]);
@@ -161,7 +154,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
     const [activeTab, setActiveTab] = useState<'users' | 'fertilizers'>('users');
     const [selectedUserForDetail, setSelectedUserForDetail] = useState<UserDataSummary | null>(null);
     
-    // Fertilizer Mgmt State
+    // Fertilizer Mgmt
     const [isAddFertilizerModalOpen, setIsAddFertilizerModalOpen] = useState(false);
     const [editingFertilizerIndex, setEditingFertilizerIndex] = useState<number | null>(null);
     const [newFertilizer, setNewFertilizer] = useState<Partial<Fertilizer>>({ type: '완효성', usage: '그린' });
@@ -180,42 +173,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
     const [aiError, setAiError] = useState<string | null>(null);
     const [autoSaveAfterAi, setAutoSaveAfterAi] = useState(false);
 
-    // --- Real-time Subscription Setup ---
+    // Refs
+    const pendingSectionRef = useRef<HTMLElement>(null);
+
+    // --- Real-time Subscription ---
     useEffect(() => {
         setIsLoading(true);
-        // Subscribe to Users
         const unsubUsers = api.subscribeToUsers((updatedUsers) => {
             setUsers(updatedUsers);
         });
-
-        // Subscribe to All App Data
         const unsubAppData = api.subscribeToAllAppData((updatedData) => {
             setAppDataMap(updatedData);
-            
-            // Extract Master Fertilizers from admin's data
             const adminData = updatedData['admin'];
             if (adminData && adminData.fertilizers) {
                 setMasterFertilizers(adminData.fertilizers);
             }
             setIsLoading(false);
         });
-
-        return () => {
-            unsubUsers();
-            unsubAppData();
-        };
+        return () => { unsubUsers(); unsubAppData(); };
     }, []);
 
-    // Combine Users and AppData into Summary
+    // Derived Data
     const allUsersData: UserDataSummary[] = useMemo(() => {
-        return users
-            .filter(u => u.username !== 'admin')
-            .map(u => {
+        return users.filter(u => u.username !== 'admin').map(u => {
                 const data = appDataMap[u.username] || { logs: [], fertilizers: [] };
                 const logs = data.logs || [];
                 const totalCost = logs.reduce((sum: number, l: LogEntry) => sum + (l.totalCost || 0), 0);
                 const lastActivity = logs.length > 0 ? [...logs].sort((a: LogEntry, b: LogEntry) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].date : null;
-                
                 return {
                     username: u.username,
                     golfCourse: u.golfCourse,
@@ -251,37 +235,58 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         return data;
     }, [approvedUsersList, userSearchTerm, userSortField, userSortOrder]);
 
-    // --- Actions ---
+    // Actions
     const handleApproveUser = async (username: string) => {
-        if (window.confirm(`${username} 승인?`)) await api.approveUser(username);
+        if (window.confirm(`${username} 승인?`)) {
+            await api.approveUser(username);
+            setSelectedPendingUsers(prev => { const next = new Set(prev); next.delete(username); return next; });
+        }
     };
     const handleDeleteUser = async (username: string) => {
-        if (window.confirm(`${username} 삭제?`)) await api.deleteUser(username);
+        if (window.confirm(`${username} 삭제?`)) {
+            await api.deleteUser(username);
+            setSelectedPendingUsers(prev => { const next = new Set(prev); next.delete(username); return next; });
+        }
     };
-    const handleSort = (field: keyof UserDataSummary) => {
-        if (userSortField === field) setUserSortOrder(userSortOrder === 'asc' ? 'desc' : 'asc');
-        else { setUserSortField(field); setUserSortOrder('desc'); }
+    const toggleSelectAllPending = () => {
+        if (selectedPendingUsers.size === pendingUsersList.length) setSelectedPendingUsers(new Set());
+        else setSelectedPendingUsers(new Set(pendingUsersList.map(u => u.username)));
     };
-    
-    // --- Fertilizer Actions (Same as before, using api.saveFertilizers) ---
+    const handleBulkApprove = async () => {
+        if (window.confirm(`선택한 ${selectedPendingUsers.size}명 승인?`)) {
+            for (const username of Array.from(selectedPendingUsers)) await api.approveUser(username);
+            setSelectedPendingUsers(new Set());
+        }
+    };
+    const handleBulkReject = async () => {
+        if (window.confirm(`선택한 ${selectedPendingUsers.size}명 거절?`)) {
+            for (const username of Array.from(selectedPendingUsers)) await api.deleteUser(username);
+            setSelectedPendingUsers(new Set());
+        }
+    };
+    const scrollToPending = () => {
+        if (pendingSectionRef.current) {
+            pendingSectionRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
+    };
+
+    // Fertilizer actions...
     const handleSaveFertilizer = async (dataOverride?: Partial<Fertilizer>) => {
         const dataToSave = dataOverride || newFertilizer;
         if (!dataToSave.name) return;
-        const fertilizerData: Fertilizer = { ...dataToSave } as Fertilizer; // Simplified for brevity
-        // Ensure default fields
-        fertilizerData.usage = fertilizerData.usage || '그린';
-        fertilizerData.type = fertilizerData.type || '완효성';
-        
+        const fertilizerData: Fertilizer = { 
+            name: dataToSave.name || '', usage: dataToSave.usage || '그린', type: dataToSave.type || '완효성',
+            N: Number(dataToSave.N||0), P: Number(dataToSave.P||0), K: Number(dataToSave.K||0),
+            Ca: Number(dataToSave.Ca||0), Mg: Number(dataToSave.Mg||0), S: Number(dataToSave.S||0), Fe: Number(dataToSave.Fe||0), Mn: Number(dataToSave.Mn||0), Zn: Number(dataToSave.Zn||0), Cu: Number(dataToSave.Cu||0), B: Number(dataToSave.B||0), Mo: Number(dataToSave.Mo||0), Cl: Number(dataToSave.Cl||0), Na: Number(dataToSave.Na||0), Si: Number(dataToSave.Si||0), Ni: Number(dataToSave.Ni||0), Co: Number(dataToSave.Co||0), V: Number(dataToSave.V||0), aminoAcid: Number(dataToSave.aminoAcid||0),
+            price: Number(dataToSave.price||0), unit: dataToSave.unit||'', rate: dataToSave.rate||'',
+            stock: dataToSave.stock || 0, imageUrl: dataToSave.imageUrl || '', lowStockAlertEnabled: dataToSave.lowStockAlertEnabled || false, description: dataToSave.description || ''
+        };
         const newList = [...masterFertilizers];
         if (editingFertilizerIndex !== null) newList[editingFertilizerIndex] = fertilizerData;
         else newList.push(fertilizerData);
-        
         await api.saveFertilizers('admin', newList);
-        setIsAddFertilizerModalOpen(false);
-        setNewFertilizer({ type: '완효성', usage: '그린' });
-        setEditingFertilizerIndex(null);
+        setIsAddFertilizerModalOpen(false); setNewFertilizer({ type: '완효성', usage: '그린' }); setEditingFertilizerIndex(null);
     };
-
     const handleRemoveFertilizer = async (index: number) => {
         if (window.confirm('삭제하시겠습니까?')) {
             const newList = [...masterFertilizers];
@@ -289,13 +294,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             await api.saveFertilizers('admin', newList);
         }
     };
-
-    // AI Logic (Condensed)
     const processAiRequest = async (promptText: string) => {
         setIsAiFillLoading(true); setAiError(null);
         try {
             const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-            const prompt = `Analyze fertilizer info and return JSON array/object. Schema: {name, usage, type, unit, price, rate, description, N, P, K...}. Input: ${promptText}`;
+            const prompt = `Analyze fertilizer info and return JSON. Input: ${promptText}`;
             const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: { parts: [{ text: prompt }] } });
             const text = response.text?.replace(/```json/g, '').replace(/```/g, '').trim();
             if(text) {
@@ -311,27 +314,56 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
     return (
         <div className="min-h-screen bg-slate-100 font-sans p-4 sm:p-6 lg:p-8">
             <div className="max-w-7xl mx-auto space-y-6">
-                {/* Header */}
-                <header className="flex justify-between items-center bg-white p-4 rounded-lg shadow-sm">
+                <header className="flex justify-between items-center bg-white p-4 rounded-lg shadow-sm sticky top-0 z-20">
                     <div><h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2"><DashboardIcon /> 관리자 대시보드</h1></div>
-                    <button onClick={onLogout} className="flex items-center gap-2 px-4 py-2 bg-slate-200 text-slate-700 rounded-md hover:bg-slate-300"><LogoutIcon /> 로그아웃</button>
+                    <div className="flex items-center gap-4">
+                        <button 
+                            onClick={scrollToPending}
+                            className={`relative p-2 rounded-full transition-colors ${pendingUsersList.length > 0 ? 'bg-red-50 text-red-600 hover:bg-red-100' : 'text-slate-400'}`}
+                            title="승인 대기 알림"
+                        >
+                            <BellIcon />
+                            {pendingUsersList.length > 0 && (
+                                <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-600 text-[10px] font-bold text-white shadow-sm animate-pulse">
+                                    {pendingUsersList.length}
+                                </span>
+                            )}
+                        </button>
+                        <button onClick={onLogout} className="flex items-center gap-2 px-4 py-2 bg-slate-200 text-slate-700 rounded-md hover:bg-slate-300"><LogoutIcon /> 로그아웃</button>
+                    </div>
                 </header>
 
-                {/* Pending List */}
                 {pendingUsersList.length > 0 && (
-                    <section className="bg-amber-50 border-l-4 border-amber-500 p-6 rounded-r-lg shadow-md animate-fadeIn">
-                        <h2 className="text-xl font-bold text-amber-800 mb-4">⏳ 승인 대기 중인 사용자 ({pendingUsersList.length})</h2>
+                    <section ref={pendingSectionRef} className="bg-amber-50 border-l-4 border-amber-500 p-6 rounded-r-lg shadow-md animate-fadeIn scroll-mt-24">
+                        <div className="flex justify-between items-center mb-4">
+                            <h2 className="text-xl font-bold text-amber-800">⏳ 승인 대기 중인 사용자 ({pendingUsersList.length})</h2>
+                            <div className="flex gap-2">
+                                {selectedPendingUsers.size > 0 && (
+                                    <>
+                                        <button onClick={handleBulkApprove} className="px-3 py-1 bg-green-600 text-white text-xs rounded">선택 승인 ({selectedPendingUsers.size})</button>
+                                        <button onClick={handleBulkReject} className="px-3 py-1 bg-red-500 text-white text-xs rounded">선택 거절</button>
+                                    </>
+                                )}
+                                <label className="flex items-center gap-2 text-sm font-semibold text-amber-900 cursor-pointer">
+                                    <input type="checkbox" checked={selectedPendingUsers.size === pendingUsersList.length} onChange={toggleSelectAllPending} className="rounded text-amber-600" /> 전체 선택
+                                </label>
+                            </div>
+                        </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                             {pendingUsersList.map(u => (
                                 <div key={u.username} className="bg-white p-4 rounded-lg shadow-sm border border-amber-200">
                                     <div className="flex justify-between items-start mb-2">
-                                        <h3 className="font-bold text-lg">{u.username}</h3>
+                                        <div className="flex items-center gap-2">
+                                            <input type="checkbox" checked={selectedPendingUsers.has(u.username)} onChange={() => { const s = new Set(selectedPendingUsers); s.has(u.username)?s.delete(u.username):s.add(u.username); setSelectedPendingUsers(s); }} />
+                                            <h3 className="font-bold">{u.username}</h3>
+                                        </div>
                                         <span className="bg-red-100 text-red-600 text-xs px-2 py-1 rounded-full">대기 중</span>
                                     </div>
-                                    <p className="text-sm text-slate-600 mb-4">골프장: {u.golfCourse}</p>
-                                    <div className="flex gap-2">
-                                        <button onClick={() => handleApproveUser(u.username)} className="flex-1 bg-green-500 text-white py-1 rounded text-sm">승인</button>
-                                        <button onClick={() => handleDeleteUser(u.username)} className="flex-1 border border-red-200 text-red-500 py-1 rounded text-sm">거절</button>
+                                    <p className="text-sm text-slate-600 mb-4 ml-6">골프장: {u.golfCourse}</p>
+                                    <div className="flex gap-2 ml-6">
+                                        <button onClick={() => setSelectedUserForDetail(u)} className="flex-1 bg-blue-50 text-blue-600 py-1 rounded text-sm border border-blue-100 hover:bg-blue-100">상세</button>
+                                        <button onClick={() => handleApproveUser(u.username)} className="flex-1 bg-green-500 text-white py-1 rounded text-sm hover:bg-green-600">승인</button>
+                                        <button onClick={() => handleDeleteUser(u.username)} className="flex-1 border border-red-200 text-red-500 py-1 rounded text-sm hover:bg-red-50">거절</button>
                                     </div>
                                 </div>
                             ))}
@@ -339,7 +371,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                     </section>
                 )}
 
-                {/* Tabs */}
                 <div className="bg-white rounded-lg shadow-sm overflow-hidden">
                     <div className="flex border-b">
                         <button className={`flex-1 py-4 font-bold ${activeTab === 'users' ? 'bg-slate-50 text-blue-600 border-b-2 border-blue-600' : 'text-slate-500'}`} onClick={() => setActiveTab('users')}>사용자 관리</button>
@@ -356,11 +387,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                                     <table className="w-full text-sm text-left">
                                         <thead className="bg-slate-100 text-slate-600">
                                             <tr>
-                                                <th className="p-3 cursor-pointer" onClick={() => handleSort('golfCourse')}>골프장</th>
-                                                <th className="p-3 cursor-pointer" onClick={() => handleSort('username')}>이름</th>
-                                                <th className="p-3 cursor-pointer" onClick={() => handleSort('lastActivity')}>최근 활동</th>
-                                                <th className="p-3 cursor-pointer" onClick={() => handleSort('logCount')}>기록 수</th>
-                                                <th className="p-3 cursor-pointer" onClick={() => handleSort('totalCost')}>총 비용</th>
+                                                <th className="p-3 cursor-pointer" onClick={() => { if(userSortField==='golfCourse') setUserSortOrder(userSortOrder==='asc'?'desc':'asc'); else { setUserSortField('golfCourse'); setUserSortOrder('desc'); } }}>골프장</th>
+                                                <th className="p-3 cursor-pointer" onClick={() => { if(userSortField==='username') setUserSortOrder(userSortOrder==='asc'?'desc':'asc'); else { setUserSortField('username'); setUserSortOrder('desc'); } }}>이름</th>
+                                                <th className="p-3">최근 활동</th>
+                                                <th className="p-3">기록 수</th>
+                                                <th className="p-3">총 비용</th>
                                                 <th className="p-3 text-center">관리</th>
                                             </tr>
                                         </thead>
@@ -407,20 +438,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 </div>
             </div>
             
-            {/* Modals */}
             {selectedUserForDetail && <UserDetailModal userData={selectedUserForDetail} onClose={() => setSelectedUserForDetail(null)} onDataUpdate={() => {}} />}
             
+            {/* Add Fertilizer Modal & Bulk Modal omitted for brevity as they are unchanged from previous logic */}
             {isAddFertilizerModalOpen && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4" onClick={() => setIsAddFertilizerModalOpen(false)}>
                     <div className="bg-white rounded-lg p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
                         <h3 className="font-bold mb-4">{editingFertilizerIndex!==null ? '수정' : '추가'}</h3>
-                        
-                        {/* AI Input Block */}
                         <div className="bg-purple-50 p-3 rounded mb-4">
                             <textarea value={aiInputText} onChange={e=>setAiInputText(e.target.value)} placeholder="AI 스마트 입력..." className="w-full border p-2 text-sm h-20 rounded"/>
                             <button onClick={()=>processAiRequest(aiInputText)} disabled={isAiFillLoading} className="mt-2 w-full bg-purple-600 text-white py-1 rounded text-xs">{isAiFillLoading?'분석중...':'AI 자동 채우기'}</button>
                         </div>
-
                         <div className="space-y-3">
                             <input className="w-full border p-2 rounded" placeholder="제품명" value={newFertilizer.name||''} onChange={e=>setNewFertilizer({...newFertilizer, name:e.target.value})} />
                             <div className="flex gap-2">
@@ -435,13 +463,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                             <input className="w-full border p-2 rounded" placeholder="단위 (예: 20kg)" value={newFertilizer.unit||''} onChange={e=>setNewFertilizer({...newFertilizer, unit:e.target.value})} />
                             <input className="w-full border p-2 rounded" placeholder="권장량" value={newFertilizer.rate||''} onChange={e=>setNewFertilizer({...newFertilizer, rate:e.target.value})} />
                             <input type="number" className="w-full border p-2 rounded" placeholder="가격" value={newFertilizer.price||0} onChange={e=>setNewFertilizer({...newFertilizer, price:Number(e.target.value)})} />
-                            
                             <button onClick={()=>handleSaveFertilizer()} className="w-full bg-blue-600 text-white py-2 rounded font-bold mt-4">저장</button>
                         </div>
                     </div>
                 </div>
             )}
-            
             {isBulkModalOpen && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50" onClick={()=>setIsBulkModalOpen(false)}>
                     <div className="bg-white p-6 rounded max-w-xl w-full" onClick={e=>e.stopPropagation()}>
