@@ -2,7 +2,7 @@
 export interface Fertilizer {
   name: string;
   usage: '그린' | '티' | '페어웨이';
-  type: string;
+  type: string; // Changed from strict union to string to support expanded categories
   N: number;
   P: number;
   K: number;
@@ -57,7 +57,7 @@ export interface LogEntry {
     P?: number;
     K?: number;
   };
-  topdressing?: number; // Depth in mm
+  topdressing?: number; // Added: Depth in mm
 }
 
 export interface ChatMessage {
@@ -69,7 +69,8 @@ export interface User {
   username: string;
   password?: string;
   golfCourse: string;
-  isApproved?: boolean;
+  role: 'admin' | 'user';
+  isApproved: boolean;
 }
 
 export interface UserDataSummary {
@@ -81,6 +82,7 @@ export interface UserDataSummary {
     logs: LogEntry[];
     fertilizers: Fertilizer[];
     isApproved: boolean;
+    role: 'admin' | 'user';
 }
 
 export interface NotificationSettings {

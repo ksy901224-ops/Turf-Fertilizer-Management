@@ -2,7 +2,7 @@
 import { Fertilizer, LogEntry, User, NotificationSettings, UserDataSummary } from './types';
 import { FERTILIZER_GUIDE } from './constants';
 import { db } from './firebase';
-import { doc, getDoc, setDoc, updateDoc, collection, getDocs, deleteDoc, onSnapshot, Unsubscribe, QuerySnapshot, DocumentData } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, Unsubscribe, collection, query, getDocs } from 'firebase/firestore';
 
 // --- Interfaces & Defaults ---
 
@@ -40,8 +40,6 @@ interface AppData {
 
 // --- Helper Functions ---
 
-const delay = (ms: number = 300) => new Promise(resolve => setTimeout(resolve, ms));
-
 const initialFertilizers: Fertilizer[] = [
     { name: 'HPG-N16 (16-2-12)', usage: '그린', type: '완효성', N:16, P:2, K:12, Ca:2, Mg:1, S:4, Fe:0, Mn:0.5, Zn:0, Cu:0, B:0, Mo:0, Cl:0, Na:0, Si:0, Ni:0, Co:0, V:0, price:80000, unit:'20kg', rate:'15g/㎡', npkRatio:'8-1-6', stock: 40, imageUrl: 'https://via.placeholder.com/400x300/22c55e/ffffff?text=HPG-N16', lowStockAlertEnabled: false, description: '질소 함량이 높고 완효성 성분이 포함되어 있어 그린의 생육을 오랫동안 안정적으로 지속시켜줍니다. 생육기 전반에 사용하기 적합합니다.' },
     { name: 'Smartro NPK (20-20-20)', usage: '페어웨이', type: '수용성', N:20, P:20, K:20, Ca:0, Mg:0, S:0, Fe:0, Mn:0, Zn:0, Cu:0, B:0, Mo:0, Cl:0, Na:0, Si:0, Ni:0, Co:0, V:0, price:130000, unit:'10kg', rate:'20g/㎡', npkRatio:'1-1-1', stock: 20, lowStockAlertEnabled: true, description: '질소, 인산, 칼륨이 균형 있게 배합된 고농도 수용성 비료입니다. 엽면 시비 시 흡수가 빠르며 잔디의 색상 및 활력을 증진시킵니다.' },
@@ -60,6 +58,7 @@ export const seedAdminIfNeeded = async () => {
                 username: 'admin',
                 password: 'admin',
                 golfCourse: '관리자',
+                role: 'admin',
                 isApproved: true
             });
             
@@ -89,9 +88,10 @@ export const validateUser = async (username: string, password_provided: string):
 
         if (userSnap.exists()) {
             const user = userSnap.data() as User;
+            
             // In a real app, use hashed passwords.
             if (user.password === password_provided) {
-                if (username !== 'admin' && !user.isApproved) {
+                if (!user.isApproved) {
                     return 'pending';
                 }
                 const { password, ...userWithoutPassword } = user;
@@ -118,7 +118,13 @@ export const createUser = async (username: string, password_provided: string, go
             return 'exists';
         }
 
-        const newUser: User = { username, password: password_provided, golfCourse, isApproved: false };
+        const newUser: User = { 
+            username, 
+            password: password_provided, 
+            golfCourse, 
+            role: 'user', // Default role
+            isApproved: false // Default approval status
+        };
         await setDoc(userRef, newUser);
         
         // Initialize App Data document for this user
@@ -194,9 +200,13 @@ export const subscribeToAppData = (username: string, onUpdate: (data: Partial<Ap
 
 // Subscribe to the users collection (for Admin)
 export const subscribeToUsers = (onUpdate: (users: User[]) => void): Unsubscribe => {
-    const colRef = collection(db, "users");
-    return onSnapshot(colRef, (snapshot: QuerySnapshot<DocumentData>) => {
-        const users = snapshot.docs.map(d => d.data() as User);
+    const q = query(collection(db, "users"));
+    return onSnapshot(q, (snapshot) => {
+        const users = snapshot.docs.map(d => {
+            const u = d.data() as User;
+            const { password, ...safeUser } = u;
+            return safeUser as User;
+        });
         onUpdate(users);
     }, (error) => {
         console.error("Error subscribing to users:", error);
@@ -205,8 +215,8 @@ export const subscribeToUsers = (onUpdate: (users: User[]) => void): Unsubscribe
 
 // Subscribe to all app data (for Admin aggregation)
 export const subscribeToAllAppData = (onUpdate: (data: Record<string, Partial<AppData>>) => void): Unsubscribe => {
-    const colRef = collection(db, "appData");
-    return onSnapshot(colRef, (snapshot: QuerySnapshot<DocumentData>) => {
+    const q = query(collection(db, "appData"));
+    return onSnapshot(q, (snapshot) => {
         const data: Record<string, Partial<AppData>> = {};
         snapshot.forEach(doc => {
             data[doc.id] = doc.data() as Partial<AppData>;
@@ -219,8 +229,8 @@ export const subscribeToAllAppData = (onUpdate: (data: Record<string, Partial<Ap
 
 // --- Save Functions (Actions) ---
 
+// Fallback getters for non-subscribed contexts
 export const getFertilizers = async (username: string): Promise<Fertilizer[]> => {
-    // Legacy support or direct fetch if needed, but subscriptions preferred
     await seedAdminIfNeeded();
     try {
         const docRef = doc(db, "appData", username);
@@ -274,7 +284,6 @@ export const getSettings = async (username: string): Promise<UserSettings> => {
         
         if (docSnap.exists()) {
             const data = (docSnap.data() as AppData).settings;
-            // Merge retrieved data with default settings to ensure all required fields exist
             return { ...DEFAULT_USER_SETTINGS, ...data };
         }
         return DEFAULT_USER_SETTINGS;
@@ -294,8 +303,8 @@ export const saveSettings = async (username: string, settings: UserSettings): Pr
     }
 };
 
+// Used for fetching initial admin dashboard data without subscription if needed
 export const getAllUsersData = async (): Promise<UserDataSummary[]> => {
-    // Legacy support, Admin Dashboard now uses real-time listeners
     try {
         const usersCol = collection(db, "users");
         const userSnapshot = await getDocs(usersCol);
@@ -329,6 +338,7 @@ export const getAllUsersData = async (): Promise<UserDataSummary[]> => {
                 logs: [...logs].sort((a: LogEntry, b: LogEntry) => new Date(b.date).getTime() - new Date(a.date).getTime()),
                 fertilizers,
                 isApproved: userData.isApproved ?? true,
+                role: userData.role
             });
         }
         return allData;

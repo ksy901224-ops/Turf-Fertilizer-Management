@@ -1,0 +1,33 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Check if the requesting user is an admin
+    function isAdmin() {
+      return request.auth != null && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin";
+    }
+
+    // Check if the user account is approved
+    function isApproved(userId) {
+      return exists(/databases/$(database)/documents/users/$(userId)) &&
+             get(/databases/$(database)/documents/users/$(userId)).data.isApproved == true;
+    }
+
+    // Users Collection: Users access own profile, Admin accesses all
+    match /users/{userId} {
+      allow read, write: if request.auth != null && (
+        request.auth.uid == userId || isAdmin()
+      );
+    }
+
+    // AppData Collection: Users access own data if approved, Admin accesses all
+    match /appData/{userId}/{document=**} {
+      allow read, write: if request.auth != null && (
+        (request.auth.uid == userId && isApproved(userId)) || 
+        isAdmin()
+      );
+    }
+  }
+}
