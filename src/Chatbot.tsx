@@ -21,8 +21,8 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isOpen, onClose }) => {
   useEffect(() => {
     if (isOpen) {
       // Use import.meta.env for Vite, fallback to process.env if polyfilled
-      // @ts-ignore
-      const apiKey = import.meta.env.VITE_API_KEY || (process.env.API_KEY as string);
+      // Cast to any to prevent TS errors in Vercel build
+      const apiKey = (import.meta as any).env?.VITE_API_KEY || (process.env as any).API_KEY;
       const ai = new GoogleGenAI({apiKey});
       chatRef.current = ai.chats.create({
         model: 'gemini-2.5-flash',

@@ -3,14 +3,14 @@ import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getAnalytics } from "firebase/analytics";
 
-// Ensure ImportMetaEnv is recognized via src/vite-env.d.ts
-// Fallback to process.env if import.meta.env is somehow missing (though strictly it shouldn't be in Vite)
+// Helper to safely access env vars in Vite/Vercel environment
+// Cast import.meta to any to avoid "Property 'env' does not exist on type 'ImportMeta'" TS error
 const getEnv = (key: string) => {
-  // @ts-ignore
-  return import.meta.env?.[key] || (process.env as any)?.[key];
+  const metaEnv = (import.meta as any).env;
+  return metaEnv?.[key] || (process.env as any)?.[key];
 };
 
-// Firebase configuration using Vite environment variables
+// Firebase configuration using safe env access
 const firebaseConfig = {
   apiKey: getEnv('VITE_FIREBASE_API_KEY'),
   authDomain: getEnv('VITE_FIREBASE_AUTH_DOMAIN'),

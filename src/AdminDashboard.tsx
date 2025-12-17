@@ -301,9 +301,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
     const processAiRequest = async (promptText: string) => {
         setIsAiFillLoading(true); setAiError(null);
         try {
-            // Safely access env var with fallback
-            // @ts-ignore
-            const apiKey = import.meta.env.VITE_API_KEY || (process.env.API_KEY as string);
+            // Safely access env var with fallback using 'as any' cast to bypass strict check
+            const apiKey = (import.meta as any).env?.VITE_API_KEY || (process.env as any).API_KEY;
             const ai = new GoogleGenAI({ apiKey });
             const prompt = `Analyze fertilizer info and return JSON. Input: ${promptText}`;
             const response = await ai.models.generateContent({ model: 'gemini-2.5-flash', contents: { parts: [{ text: prompt }] } });
