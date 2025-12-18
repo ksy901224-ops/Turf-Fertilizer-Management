@@ -21,8 +21,9 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isOpen, onClose }) => {
   useEffect(() => {
     if (isOpen) {
       const ai = new GoogleGenAI({apiKey: process.env.API_KEY});
+      // Fix: Updated model to gemini-3-flash-preview as per guidelines
       chatRef.current = ai.chats.create({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3-flash-preview',
         config: {
           systemInstruction: `You are "TurfBot", a specialized AI agronomist for a turf fertilizer management application. Your expertise covers:
 1.  **General Turf Management:** Lawn care, fertilization, etc.

@@ -17,11 +17,11 @@ import { onSnapshot, doc } from 'firebase/firestore';
 import { db } from './firebase';
 
 const PendingApprovalScreen = ({ username, onLogout }: { username: string, onLogout: () => void }) => (
-    <div className="flex flex-col justify-center items-center min-h-screen bg-slate-100 p-4 font-sans">
-        <div className="bg-white p-8 rounded-xl shadow-lg max-w-md w-full text-center border-t-4 border-amber-500">
+    <div className="flex flex-col justify-center items-center min-h-screen bg-slate-100 p-4 font-sans text-center">
+        <div className="bg-white p-8 rounded-xl shadow-lg max-w-md w-full border-t-4 border-amber-500">
             <div className="mx-auto w-16 h-16 bg-amber-100 rounded-full flex items-center justify-center mb-4 text-3xl">⏳</div>
             <h1 className="text-2xl font-bold text-slate-800 mb-2">가입 승인 대기 중</h1>
-            <p className="text-slate-600 mb-6">안녕하세요, <strong>{username}</strong>님.<br/>관리자의 승인을 기다리고 있습니다.</p>
+            <p className="text-slate-600 mb-6">안녕하세요, <strong>{username}</strong>님.<br/>관리자의 승인을 기다리고 있습니다. 승인이 완료되면 대시보드를 이용하실 수 있습니다.</p>
             <button onClick={onLogout} className="text-sm text-blue-600 hover:underline font-bold">다른 계정으로 로그인</button>
         </div>
     </div>
@@ -150,16 +150,28 @@ export default function TurfFertilizerApp() {
 
   const handleGetRecommendation = async () => {
     setIsLoadingAI(true);
+    setAiResponse('');
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const prompt = `당신은 데이터 기반 잔디 관리 전문가입니다. 다음 시비 기록과 구역 면적 데이터를 분석하여 향후 1개월간의 최적 시비 처방과 관리 조언을 한국어로 전문적으로 작성해주세요.
+      데이터 요약:
+      - 그린 면적: ${greenArea}㎡, 티 면적: ${teeArea}㎡, 페어웨이 면적: ${fairwayArea}㎡
+      - 선택 가이드: ${selectedGuide}
+      - 최근 시비 기록: ${JSON.stringify(log.slice(0, 5).map(l => ({ date: l.date, product: l.product, area: l.area, rate: l.applicationRate })))}
+      
+      답변 내용:
+      1. 현재 영양 상태 진단
+      2. 구역별 추천 비료 및 시비량 (보유 비료 활용)
+      3. 계절적 관리 팁`;
+
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
-        contents: `당신은 골프장 잔디 비료 전문가입니다. 다음 시비 기록을 분석하고 향후 관리 방안을 한국어로 전문적으로 조언해주세요. 최근 3건: ${JSON.stringify(log.slice(0,3))}`
+        contents: prompt
       });
-      setAiResponse(response.text || '추천 결과가 없습니다.');
+      setAiResponse(response.text || '분석 결과를 생성할 수 없습니다.');
     } catch (e) {
       console.error(e);
-      setAiResponse('AI 분석 중 오류가 발생했습니다.');
+      setAiResponse('AI 분석 중 오류가 발생했습니다. API 키나 네트워크 상태를 확인해주세요.');
     } finally {
       setIsLoadingAI(false);
     }
@@ -202,7 +214,7 @@ export default function TurfFertilizerApp() {
                   {['그린', '티', '페어웨이'].map(area => (
                     <div key={area} className="p-4 bg-slate-50 rounded-lg border border-slate-200">
                       <h3 className="font-bold mb-2 text-slate-700 text-sm">{area} 연간 계획</h3>
-                      <div className="text-xs text-slate-500">누적 목표 질소(N): <span className="font-bold text-green-600">{manualTargets[area].reduce((a,b)=>a+b.N,0)}g/㎡</span></div>
+                      <div className="text-xs text-slate-500">누적 목표 질소(N): <span className="font-bold text-green-600">{manualTargets[area].reduce((a,b)=>a+b.N,0).toFixed(1)}g/㎡</span></div>
                     </div>
                   ))}
                 </div>
@@ -210,9 +222,9 @@ export default function TurfFertilizerApp() {
                 <div className="bg-blue-50 p-4 rounded-lg border border-blue-100">
                    <p className="text-sm text-blue-800">현재 <strong>{selectedGuide}</strong> 기준 표준 권장량을 따르고 있습니다.</p>
                    <div className="mt-2 grid grid-cols-3 gap-2 text-center">
-                      <div className="bg-white p-2 rounded text-xs">N: {FERTILIZER_GUIDE[selectedGuide].N}g</div>
-                      <div className="bg-white p-2 rounded text-xs">P: {FERTILIZER_GUIDE[selectedGuide].P}g</div>
-                      <div className="bg-white p-2 rounded text-xs">K: {FERTILIZER_GUIDE[selectedGuide].K}g</div>
+                      <div className="bg-white p-2 rounded text-xs font-bold text-green-700">N: {FERTILIZER_GUIDE[selectedGuide].N}g</div>
+                      <div className="bg-white p-2 rounded text-xs font-bold text-blue-700">P: {FERTILIZER_GUIDE[selectedGuide].P}g</div>
+                      <div className="bg-white p-2 rounded text-xs font-bold text-orange-700">K: {FERTILIZER_GUIDE[selectedGuide].K}g</div>
                    </div>
                 </div>
               )}
@@ -297,21 +309,19 @@ export default function TurfFertilizerApp() {
         <section className="bg-gradient-to-br from-purple-600 to-indigo-700 p-8 rounded-2xl shadow-xl text-white">
           <div className="flex flex-col items-center text-center space-y-4">
             <div className="p-3 bg-white/20 rounded-full"><SparklesIcon className="w-8 h-8" /></div>
-            <h2 className="text-xl font-bold">AI 데이터 전문가 분석</h2>
+            <h2 className="text-xl font-bold">AI 데이터 전문가 분석 및 처방</h2>
             <p className="text-purple-100 text-sm max-w-md">누적 시비 데이터를 바탕으로 현재 잔디의 영양 상태를 진단하고 최적의 처방을 제안합니다.</p>
             <button 
               onClick={handleGetRecommendation}
               disabled={isLoadingAI}
               className="px-8 py-3 bg-white text-purple-700 font-extrabold rounded-full hover:bg-purple-50 transition-all disabled:opacity-50 shadow-lg flex items-center gap-2"
             >
-              {isLoadingAI ? <span className="animate-pulse">분석 중...</span> : <><SparklesIcon className="w-5 h-5"/> 추천 받기</>}
+              {isLoadingAI ? <span className="animate-pulse">데이터 분석 중...</span> : <><SparklesIcon className="w-5 h-5"/> 맞춤 리포트 생성</>}
             </button>
           </div>
           {aiResponse && (
-            <div className="mt-6 p-6 bg-white/10 backdrop-blur-md rounded-xl border border-white/20 text-sm animate-fadeIn leading-relaxed">
-              <div className="prose prose-invert max-w-none">
+            <div className="mt-6 p-6 bg-white/10 backdrop-blur-md rounded-xl border border-white/20 text-sm animate-fadeIn leading-relaxed whitespace-pre-wrap">
                 {aiResponse}
-              </div>
             </div>
           )}
         </section>
@@ -330,7 +340,7 @@ export default function TurfFertilizerApp() {
                 <div className="flex items-center gap-4">
                    <div className="text-right">
                      <div className="text-sm font-extrabold text-blue-600">{Math.round(entry.totalCost).toLocaleString()}원</div>
-                     <div className="text-[10px] text-slate-400 font-bold">N: {entry.nutrients.N?.toFixed(1)}g / P: {entry.nutrients.P?.toFixed(1)}g</div>
+                     <div className="text-[10px] text-slate-400 font-bold">N: {entry.nutrients.N?.toFixed(2)}g / P: {entry.nutrients.P?.toFixed(2)}g</div>
                    </div>
                    <button 
                     onClick={() => { if(window.confirm('기록을 삭제하시겠습니까?')) { const n = log.filter(l=>l.id!==entry.id); setLog(n); api.saveLog(user!, n); } }}

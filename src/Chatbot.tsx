@@ -20,21 +20,22 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isOpen, onClose }) => {
   useEffect(() => {
     if (isOpen) {
       try {
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        // Use process.env directly which is provided by vite.config.ts define block
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
         chatRef.current = ai.chats.create({
           model: 'gemini-3-flash-preview',
           config: {
-            systemInstruction: `당신은 잔디 관리 전문 AI agronomist "TurfBot"입니다. 골프장 관리자들에게 전문적이고 실용적인 비료 및 잔디 병충해 조언을 한국어로 친절하게 제공하세요.`,
+            systemInstruction: `당신은 잔디 관리 전문 AI agronomist "TurfBot"입니다. 골프장 관리자들에게 전문적이고 실용적인 비료 처방 및 잔디 병충해 조언을 한국어로 친절하게 제공하세요.`,
           }
         });
         if (messages.length === 0) {
-            setMessages([{ role: 'model', content: '안녕하세요! TurfBot입니다. 잔디 관리나 비료 처방에 대해 궁금한 점을 물어보세요.' }]);
+            setMessages([{ role: 'model', content: '안녕하세요! TurfBot입니다. 잔디 관리나 비료 처방에 대해 궁금한 점을 무엇이든 물어보세요.' }]);
         }
       } catch (e) {
         console.error("AI Initialization error:", e);
       }
     }
-  }, [isOpen]);
+  }, [isOpen, messages.length]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -56,7 +57,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isOpen, onClose }) => {
         setMessages(prev => [...prev, { role: 'model', content: response.text ?? '답변을 생성하지 못했습니다.' }]);
     } catch (err) {
         console.error(err);
-        setMessages(prev => [...prev, { role: 'model', content: '연결 오류가 발생했습니다. 나중에 다시 시도해주세요.' }]);
+        setMessages(prev => [...prev, { role: 'model', content: '죄송합니다. 연결 중 오류가 발생했습니다. 나중에 다시 시도해주세요.' }]);
     } finally {
         setIsLoading(false);
     }
@@ -71,7 +72,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isOpen, onClose }) => {
         onClick={(e) => e.stopPropagation()}
       >
         <header className="p-4 border-b flex justify-between items-center bg-purple-600 text-white">
-          <h2 className="font-bold flex items-center gap-2">TurfBot AI 전문가</h2>
+          <h2 className="font-bold flex items-center gap-2 text-lg">TurfBot AI 전문가</h2>
           <button onClick={onClose} className="p-2 hover:bg-white/20 rounded-full transition-colors"><CloseIcon /></button>
         </header>
 
