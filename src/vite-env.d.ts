@@ -1,5 +1,5 @@
-/// <reference types="vite/client" />
 
+// Removed reference types="vite/client" as it was causing resolution errors in this environment
 interface ImportMetaEnv {
   readonly VITE_API_KEY: string;
   readonly VITE_FIREBASE_API_KEY: string;
