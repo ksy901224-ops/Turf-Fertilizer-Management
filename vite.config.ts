@@ -3,7 +3,7 @@ import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig(({ mode }) => {
-  // Fix: Cast process to any to access the cwd() method which is available in the Node.js environment during the Vite build process.
+  // Fix: Cast process to any to resolve "Property 'cwd' does not exist on type 'Process'" error.
   const env = loadEnv(mode, (process as any).cwd(), '');
 
   return {
@@ -11,19 +11,23 @@ export default defineConfig(({ mode }) => {
     define: {
       'process.env': {
         NODE_ENV: JSON.stringify(mode),
-        // google-services.json에서 제공된 키 정보 주입
-        API_KEY: JSON.stringify('AIzaSyAyXsqhvN3ZqkozeLbNNZvYyInJdGa_i78'),
-        VITE_FIREBASE_API_KEY: JSON.stringify('AIzaSyAyXsqhvN3ZqkozeLbNNZvYyInJdGa_i78'),
-        VITE_FIREBASE_AUTH_DOMAIN: JSON.stringify('gen-lang-client-0649462111.firebaseapp.com'),
-        VITE_FIREBASE_PROJECT_ID: JSON.stringify('gen-lang-client-0649462111'),
-        VITE_FIREBASE_STORAGE_BUCKET: JSON.stringify('gen-lang-client-0649462111.firebasestorage.app'),
-        VITE_FIREBASE_MESSAGING_SENDER_ID: JSON.stringify('1079144926106'),
-        VITE_FIREBASE_APP_ID: JSON.stringify('1:1079144926106:android:f2cce27b0ad8f5a9264823')
+        // Fix: Removed hardcoded API key fallbacks. API keys must be obtained exclusively from environment variables.
+        API_KEY: JSON.stringify(env.API_KEY),
+        VITE_FIREBASE_API_KEY: JSON.stringify(env.VITE_FIREBASE_API_KEY),
+        VITE_FIREBASE_AUTH_DOMAIN: JSON.stringify(env.VITE_FIREBASE_AUTH_DOMAIN),
+        VITE_FIREBASE_PROJECT_ID: JSON.stringify(env.VITE_FIREBASE_PROJECT_ID),
+        VITE_FIREBASE_STORAGE_BUCKET: JSON.stringify(env.VITE_FIREBASE_STORAGE_BUCKET),
+        VITE_FIREBASE_MESSAGING_SENDER_ID: JSON.stringify(env.VITE_FIREBASE_MESSAGING_SENDER_ID),
+        VITE_FIREBASE_APP_ID: JSON.stringify(env.VITE_FIREBASE_APP_ID)
       }
     },
     build: {
       sourcemap: false,
       minify: 'terser',
+      outDir: 'dist'
+    },
+    server: {
+      port: 3000
     }
   };
 });
