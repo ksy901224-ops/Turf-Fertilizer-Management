@@ -3,8 +3,6 @@ import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getAnalytics, isSupported } from "firebase/analytics";
 
-// ✅ Firebase 환경변수는 반드시 VITE_ 접두사를 붙여야 Vite + Vercel 환경에서 로드됩니다.
-// Vite's static replacement works best when these are accessed directly.
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
@@ -15,13 +13,9 @@ const firebaseConfig = {
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
 };
 
-// ✅ 앱 초기화 (HMR 오류 방지를 위해 기존 인스턴스 확인)
 const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
-
-// ✅ Firestore 인스턴스 내보내기
 export const db = getFirestore(app);
 
-// ✅ Analytics 인스턴스 내보내기 (SSR 및 미지원 브라우저 대응)
 export let analytics: any = null;
 if (typeof window !== 'undefined') {
   isSupported().then(supported => {

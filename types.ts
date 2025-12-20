@@ -70,6 +70,8 @@ export interface User {
   password?: string;
   golfCourse: string;
   isApproved?: boolean;
+  // Fix: Added missing role property to resolve errors in App.tsx (line 71, 72)
+  role: 'admin' | 'user';
 }
 
 export interface UserDataSummary {
@@ -81,6 +83,8 @@ export interface UserDataSummary {
     logs: LogEntry[];
     fertilizers: Fertilizer[];
     isApproved: boolean;
+    // Fix: Added missing role property for data summary consistency
+    role: 'admin' | 'user';
 }
 
 export interface NotificationSettings {
