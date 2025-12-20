@@ -52,3 +52,28 @@ export const MONTHLY_DISTRIBUTION: { [key: string]: { N: number[], P: number[], 
         K: [0.05, 0.05, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.05, 0.05] 
     },
 };
+
+// Fix: Export UserSettings and DEFAULT_USER_SETTINGS to be imported by App.tsx and api.ts
+export interface UserSettings {
+    greenArea: string;
+    teeArea: string;
+    fairwayArea: string;
+    selectedGuide: string;
+    manualPlanMode?: boolean;
+    manualTargets?: { [area: string]: { N: number, P: number, K: number }[] };
+    fairwayGuideType?: 'KBG' | 'Zoysia';
+}
+
+export const DEFAULT_USER_SETTINGS: UserSettings = {
+    greenArea: '',
+    teeArea: '',
+    fairwayArea: '',
+    selectedGuide: '난지형잔디 (한국잔디)',
+    manualPlanMode: false,
+    manualTargets: {
+        '그린': Array(12).fill({ N: 0, P: 0, K: 0 }),
+        '티': Array(12).fill({ N: 0, P: 0, K: 0 }),
+        '페어웨이': Array(12).fill({ N: 0, P: 0, K: 0 }),
+    },
+    fairwayGuideType: 'KBG'
+};

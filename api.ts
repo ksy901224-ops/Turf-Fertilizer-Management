@@ -2,30 +2,8 @@
 import { Fertilizer, LogEntry, User, UserDataSummary } from './types';
 import { db } from './firebase';
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, Unsubscribe, collection, getDocs } from 'firebase/firestore';
-
-export interface UserSettings {
-    greenArea: string;
-    teeArea: string;
-    fairwayArea: string;
-    selectedGuide: string;
-    manualPlanMode?: boolean;
-    manualTargets?: { [area: string]: { N: number, P: number, K: number }[] };
-    fairwayGuideType?: 'KBG' | 'Zoysia';
-}
-
-const DEFAULT_USER_SETTINGS: UserSettings = {
-    greenArea: '',
-    teeArea: '',
-    fairwayArea: '',
-    selectedGuide: '난지형잔디 (한국잔디)',
-    manualPlanMode: false,
-    manualTargets: {
-        '그린': Array(12).fill({ N: 0, P: 0, K: 0 }),
-        '티': Array(12).fill({ N: 0, P: 0, K: 0 }),
-        '페어웨이': Array(12).fill({ N: 0, P: 0, K: 0 }),
-    },
-    fairwayGuideType: 'KBG'
-};
+// Fix: Import UserSettings and DEFAULT_USER_SETTINGS from constants
+import { DEFAULT_USER_SETTINGS, UserSettings } from './constants';
 
 const seedAdminIfNeeded = async () => {
     try {

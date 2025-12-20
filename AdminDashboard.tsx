@@ -152,7 +152,8 @@ export const AdminDashboard: React.FC<{ user: string; onLogout: () => void }> = 
         if (!aiInput.trim()) return;
         setIsAiLoading(true);
         try {
-            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
+            // Fix: Directly use process.env.API_KEY for initializing GoogleGenAI
+            const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
             const response = await ai.models.generateContent({
                 model: 'gemini-3-flash-preview',
                 contents: `Extract fertilizer data (name, N, P, K, price, unit, rate) as JSON from: "${aiInput}". Response only JSON.`

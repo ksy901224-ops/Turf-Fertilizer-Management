@@ -2,7 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { GoogleGenAI } from '@google/genai';
 import { Fertilizer, LogEntry, User } from './types';
-import { FERTILIZER_GUIDE } from './constants';
+import { FERTILIZER_GUIDE, DEFAULT_USER_SETTINGS, UserSettings } from './constants';
 import * as api from './api';
 import { Chatbot } from './Chatbot';
 import { ChatIcon, LogoutIcon, TrashIcon, ClipboardListIcon, PlusIcon, ChevronDownIcon } from './icons';
@@ -30,6 +30,7 @@ export default function TurfFertilizerApp() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [isPendingApproval, setIsPendingApproval] = useState(false);
+  const [userSettings, setUserSettings] = useState<UserSettings>(DEFAULT_USER_SETTINGS);
   
   const [adminFertilizers, setAdminFertilizers] = useState<Fertilizer[]>([]);
   const [userFertilizers, setUserFertilizers] = useState<Fertilizer[]>([]);
@@ -80,6 +81,7 @@ export default function TurfFertilizerApp() {
       if (data) {
         if (data.fertilizers) setUserFertilizers(data.fertilizers);
         if (data.logs) setLog(data.logs.sort((a,b) => new Date(b.date).getTime() - new Date(a.date).getTime()));
+        if (data.settings) setUserSettings({ ...DEFAULT_USER_SETTINGS, ...data.settings });
       }
     });
     return () => unsub();
@@ -90,6 +92,13 @@ export default function TurfFertilizerApp() {
         api.getFertilizers('admin').then(setAdminFertilizers);
     }
   }, [user, isPendingApproval]);
+
+  useEffect(() => {
+    // Set default area based on settings when tab changes
+    if (activeLogTab === '그린') setLogArea(userSettings.greenArea);
+    else if (activeLogTab === '티') setLogArea(userSettings.teeArea);
+    else if (activeLogTab === '페어웨이') setLogArea(userSettings.fairwayArea);
+  }, [activeLogTab, userSettings]);
 
   const fertilizers = useMemo(() => [...adminFertilizers, ...userFertilizers], [adminFertilizers, userFertilizers]);
 
@@ -123,7 +132,7 @@ export default function TurfFertilizerApp() {
     await api.saveLog(user!, newLogs);
     alert('기록이 저장되었습니다.');
     setApplicationRate('');
-    setLogArea('');
+    // Area resets based on settings for next time, managed by useEffect
   };
 
   const handleGetRecommendation = async () => {
@@ -131,6 +140,7 @@ export default function TurfFertilizerApp() {
     setIsLoadingAI(true);
     setAiResponse('');
     try {
+      // Fix: Directly use process.env.API_KEY for initializing GoogleGenAI
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const prompt = `잔디 관리 전문가로서 다음 시비 데이터를 분석하여 향후 최적 시비 처방을 작성하세요: ${JSON.stringify(log.slice(0, 5))}. 한글로 답변하세요.`;
       const response = await ai.models.generateContent({
@@ -139,6 +149,7 @@ export default function TurfFertilizerApp() {
       });
       setAiResponse(response.text || '분석 결과가 없습니다.');
     } catch (e) {
+      console.error(e);
       setAiResponse('AI 분석 중 오류가 발생했습니다.');
     } finally {
       setIsLoadingAI(false);
@@ -158,7 +169,7 @@ export default function TurfFertilizerApp() {
             <h1 className="text-2xl font-bold text-slate-800">E&L Turf Management</h1>
             <p className="text-sm text-slate-500 font-medium">{currentUser?.golfCourse} | {user}님</p>
           </div>
-          <button onClick={handleLogout} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-600 rounded-lg hover:bg-red-50 hover:text-red-600 transition-all font-bold">
+          <button onClick={handleLogout} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-red-50 hover:text-red-600 transition-all font-bold">
             <LogoutIcon /> <span>로그아웃</span>
           </button>
         </header>

@@ -20,6 +20,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isOpen, onClose }) => {
   useEffect(() => {
     if (isOpen) {
       try {
+        // Fix: Exclusively use process.env.API_KEY for initializing GoogleGenAI
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         chatRef.current = ai.chats.create({
           model: 'gemini-3-flash-preview',
@@ -68,7 +69,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isOpen, onClose }) => {
   return (
     <div className="fixed inset-0 bg-black/60 z-50 flex justify-center items-end sm:items-center p-4" onClick={onClose}>
       <div 
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg h-[80vh] flex flex-col overflow-hidden"
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg h-[80vh] flex flex-col overflow-hidden animate-fadeIn"
         onClick={(e) => e.stopPropagation()}
       >
         <header className="p-4 border-b flex justify-between items-center bg-indigo-600 text-white">

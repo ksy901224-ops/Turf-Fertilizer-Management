@@ -3,16 +3,36 @@ import { initializeApp, getApps, getApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getAnalytics, isSupported } from "firebase/analytics";
 
-// ✅ Firebase 환경변수는 반드시 VITE_ 접두사를 붙여야 Vite + Vercel 환경에서 로드됩니다.
-// Vite's static replacement works best when these are accessed directly.
+/**
+ * Safely retrieves environment variables from available namespaces.
+ * Prioritizes import.meta.env (Vite standard) and falls back to process.env.
+ */
+const getEnvVar = (key: string): string | undefined => {
+  try {
+    // Check import.meta.env first
+    if (typeof import.meta !== 'undefined' && (import.meta as any).env) {
+      return (import.meta as any).env[key];
+    }
+  } catch (e) {}
+
+  try {
+    // Fallback to process.env
+    if (typeof process !== 'undefined' && process.env) {
+      return (process.env as any)[key];
+    }
+  } catch (e) {}
+
+  return undefined;
+};
+
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+  apiKey: getEnvVar('VITE_FIREBASE_API_KEY'),
+  authDomain: getEnvVar('VITE_FIREBASE_AUTH_DOMAIN'),
+  projectId: getEnvVar('VITE_FIREBASE_PROJECT_ID'),
+  storageBucket: getEnvVar('VITE_FIREBASE_STORAGE_BUCKET'),
+  messagingSenderId: getEnvVar('VITE_FIREBASE_MESSAGING_SENDER_ID'),
+  appId: getEnvVar('VITE_FIREBASE_APP_ID'),
+  measurementId: getEnvVar('VITE_FIREBASE_MEASUREMENT_ID'),
 };
 
 // ✅ 앱 초기화 (HMR 오류 방지를 위해 기존 인스턴스 확인)

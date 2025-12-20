@@ -20,6 +20,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isOpen, onClose }) => {
   useEffect(() => {
     if (isOpen) {
       try {
+        // Strictly use process.env.API_KEY for Gemini API
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         chatRef.current = ai.chats.create({
           model: 'gemini-3-flash-preview',
