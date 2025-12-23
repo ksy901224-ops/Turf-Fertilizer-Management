@@ -5,11 +5,12 @@ import { Fertilizer, LogEntry, User } from './types';
 import { FERTILIZER_GUIDE, DEFAULT_USER_SETTINGS, UserSettings } from './constants';
 import * as api from './api';
 import { Chatbot } from './Chatbot';
-import { ChatIcon, LogoutIcon, TrashIcon, ClipboardListIcon, PlusIcon, ChevronDownIcon, CalculatorIcon } from './icons';
+import { ChatIcon, LogoutIcon, TrashIcon, ClipboardListIcon, PlusIcon, ChevronDownIcon, CalculatorIcon, CogIcon } from './icons';
 import { Login } from './Login';
 import { AdminDashboard } from './AdminDashboard';
 import { LoadingSpinner } from './LoadingSpinner';
 import { FertilizerDetailModal } from './FertilizerDetailModal';
+import UserSettingsComponent from './UserSettingsComponent';
 import { getApplicationDetails } from './utils';
 import { onSnapshot, doc } from 'firebase/firestore';
 import { db } from './firebase';
@@ -49,6 +50,7 @@ export default function TurfFertilizerApp() {
   const [aiResponse, setAiResponse] = useState('');
   const [isLoadingAI, setIsLoadingAI] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   useEffect(() => {
     const loggedInUsername = localStorage.getItem('turf_user');
@@ -111,22 +113,23 @@ export default function TurfFertilizerApp() {
     
     if (isNaN(area) || area <= 0 || isNaN(rate) || rate <= 0) return null;
 
-    // Parse Unit Size (e.g., "20kg" -> 20000, "1L" -> 1000)
+    // Robust parsing for unit size (e.g., "20kg", "1L")
     const unitText = selectedProduct.unit.toLowerCase();
-    const unitNum = parseFloat(unitText.replace(/[^0-9.]/g, ''));
+    const unitNum = parseFloat(unitText);
     
-    if (isNaN(unitNum) || unitNum === 0) return null;
+    if (isNaN(unitNum) || unitNum <= 0) return null;
 
     let unitBaseAmount = unitNum; // default assume g or ml based on unitText
     
     // Normalize to base unit (g or ml)
     if (unitText.includes('kg')) {
         unitBaseAmount = unitNum * 1000;
+    } else if (unitText.includes('ton') || unitText.includes('톤')) {
+        unitBaseAmount = unitNum * 1000 * 1000;
     } else if (unitText.includes('l') && !unitText.includes('ml')) {
         unitBaseAmount = unitNum * 1000;
-    } else if (unitText.includes('ton')) {
-        unitBaseAmount = unitNum * 1000 * 1000;
     }
+    // If unit is already 'g' or 'ml' (or unspecified), treat as base unit
 
     const totalNeeded = area * rate; // Total g or ml
     const bags = totalNeeded / unitBaseAmount;
@@ -188,7 +191,7 @@ export default function TurfFertilizerApp() {
     setIsLoadingAI(true);
     setAiResponse('');
     try {
-      // Fix: Directly use process.env.API_KEY for initializing GoogleGenAI
+      // Strictly use process.env.API_KEY for initializing GoogleGenAI
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const prompt = `잔디 관리 전문가로서 다음 시비 데이터를 분석하여 향후 최적 시비 처방을 작성하세요: ${JSON.stringify(log.slice(0, 5))}. 한글로 답변하세요.`;
       const response = await ai.models.generateContent({
@@ -217,9 +220,14 @@ export default function TurfFertilizerApp() {
             <h1 className="text-2xl font-bold text-slate-800">E&L Turf Management</h1>
             <p className="text-sm text-slate-500 font-medium">{currentUser?.golfCourse} | {user}님</p>
           </div>
-          <button onClick={handleLogout} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-red-50 hover:text-red-600 transition-all font-bold">
-            <LogoutIcon /> <span>로그아웃</span>
-          </button>
+          <div className="flex gap-2">
+            <button onClick={() => setIsSettingsOpen(true)} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-blue-50 hover:text-blue-600 transition-all font-bold">
+                <CogIcon className="w-5 h-5" /> <span className="hidden sm:inline">설정</span>
+            </button>
+            <button onClick={handleLogout} className="flex items-center gap-2 px-4 py-2 bg-slate-100 text-slate-700 rounded-lg hover:bg-red-50 hover:text-red-600 transition-all font-bold">
+                <LogoutIcon /> <span className="hidden sm:inline">로그아웃</span>
+            </button>
+          </div>
         </header>
 
         <section className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
@@ -321,6 +329,16 @@ export default function TurfFertilizerApp() {
            <ChatIcon className="w-7 h-7" />
         </button>
       </div>
+
+      {/* Settings Modal */}
+      {isSettingsOpen && user && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex justify-center items-center p-4" onClick={() => setIsSettingsOpen(false)}>
+            <div className="w-full max-w-2xl max-h-[90vh] shadow-2xl" onClick={e => e.stopPropagation()}>
+                <UserSettingsComponent userId={user} onClose={() => setIsSettingsOpen(false)} />
+            </div>
+        </div>
+      )}
+
       {detailModalFertilizer && <FertilizerDetailModal fertilizer={detailModalFertilizer} onClose={() => setDetailModalFertilizer(null)} />}
     </div>
   );
