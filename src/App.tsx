@@ -5,7 +5,7 @@ import { Fertilizer, LogEntry, User } from './types';
 import { FERTILIZER_GUIDE, DEFAULT_USER_SETTINGS, UserSettings } from './constants';
 import * as api from './api';
 import { Chatbot } from './Chatbot';
-import { ChatIcon, LogoutIcon, TrashIcon, ClipboardListIcon, PlusIcon, ChevronDownIcon } from './icons';
+import { ChatIcon, LogoutIcon, TrashIcon, ClipboardListIcon, PlusIcon, ChevronDownIcon, CalculatorIcon } from './icons';
 import { Login } from './Login';
 import { AdminDashboard } from './AdminDashboard';
 import { LoadingSpinner } from './LoadingSpinner';
@@ -102,6 +102,54 @@ export default function TurfFertilizerApp() {
 
   const fertilizers = useMemo(() => [...adminFertilizers, ...userFertilizers], [adminFertilizers, userFertilizers]);
 
+  // Calculate required bags/bottles
+  const calculatedRequirement = useMemo(() => {
+    if (!selectedProduct || !logArea || !applicationRate) return null;
+    
+    const area = parseFloat(logArea);
+    const rate = parseFloat(applicationRate);
+    
+    if (isNaN(area) || area <= 0 || isNaN(rate) || rate <= 0) return null;
+
+    // Parse Unit Size (e.g., "20kg" -> 20000, "1L" -> 1000)
+    const unitText = selectedProduct.unit.toLowerCase();
+    const unitNum = parseFloat(unitText.replace(/[^0-9.]/g, ''));
+    
+    if (isNaN(unitNum) || unitNum === 0) return null;
+
+    let unitBaseAmount = unitNum; // default assume g or ml based on unitText
+    
+    // Normalize to base unit (g or ml)
+    if (unitText.includes('kg')) {
+        unitBaseAmount = unitNum * 1000;
+    } else if (unitText.includes('l') && !unitText.includes('ml')) {
+        unitBaseAmount = unitNum * 1000;
+    } else if (unitText.includes('ton')) {
+        unitBaseAmount = unitNum * 1000 * 1000;
+    }
+
+    const totalNeeded = area * rate; // Total g or ml
+    const bags = totalNeeded / unitBaseAmount;
+
+    // Format for display
+    let displayTotal = totalNeeded;
+    let displayUnit = selectedProduct.type === '액상' ? 'ml' : 'g';
+
+    if (totalNeeded >= 1000) {
+        displayTotal = totalNeeded / 1000;
+        displayUnit = selectedProduct.type === '액상' ? 'L' : 'kg';
+    }
+
+    const isBottle = selectedProduct.type === '액상' || selectedProduct.unit.includes('L') || selectedProduct.unit.includes('ml');
+
+    return {
+        bags: bags.toFixed(1), // e.g. 3.5
+        total: displayTotal.toLocaleString(undefined, { maximumFractionDigits: 1 }),
+        unit: displayUnit,
+        containerName: isBottle ? '병(통)' : '포(교)'
+    };
+  }, [selectedProduct, logArea, applicationRate]);
+
   const handleLogout = () => {
     if (window.confirm('로그아웃 하시겠습니까?')) {
       localStorage.removeItem('turf_user');
@@ -132,6 +180,7 @@ export default function TurfFertilizerApp() {
     await api.saveLog(user!, newLogs);
     alert('기록이 저장되었습니다.');
     setApplicationRate('');
+    // Area resets based on settings for next time, managed by useEffect
   };
 
   const handleGetRecommendation = async () => {
@@ -139,7 +188,7 @@ export default function TurfFertilizerApp() {
     setIsLoadingAI(true);
     setAiResponse('');
     try {
-      // Strictly use process.env.API_KEY for initializing GoogleGenAI
+      // Fix: Directly use process.env.API_KEY for initializing GoogleGenAI
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const prompt = `잔디 관리 전문가로서 다음 시비 데이터를 분석하여 향후 최적 시비 처방을 작성하세요: ${JSON.stringify(log.slice(0, 5))}. 한글로 답변하세요.`;
       const response = await ai.models.generateContent({
@@ -205,6 +254,27 @@ export default function TurfFertilizerApp() {
                 ))}
             </div>
             <input type="number" value={logArea} onChange={e=>setLogArea(e.target.value)} placeholder={`${activeLogTab} 면적 (㎡)`} className="w-full p-3 border rounded-lg mb-4 outline-none focus:ring-2 focus:ring-green-500" />
+            
+            {calculatedRequirement && (
+                <div className="mb-4 p-4 bg-blue-50 border border-blue-100 rounded-xl flex justify-between items-center animate-fadeIn">
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 bg-white rounded-full text-blue-600 shadow-sm">
+                            <CalculatorIcon className="w-5 h-5" />
+                        </div>
+                        <div>
+                            <p className="text-xs font-bold text-blue-800">예상 소요량</p>
+                            <p className="text-lg font-bold text-slate-800">
+                                약 <span className="text-blue-600">{calculatedRequirement.bags}</span> {calculatedRequirement.containerName}
+                            </p>
+                        </div>
+                    </div>
+                    <div className="text-right">
+                        <p className="text-xs text-slate-500 font-medium">총 투입량</p>
+                        <p className="text-sm font-bold text-slate-700">{calculatedRequirement.total}{calculatedRequirement.unit}</p>
+                    </div>
+                </div>
+            )}
+
             <button onClick={handleAddLog} className="w-full py-4 bg-green-600 text-white font-bold rounded-xl shadow-lg hover:bg-green-700 transition-all text-lg">기록 저장하기</button>
         </section>
 
