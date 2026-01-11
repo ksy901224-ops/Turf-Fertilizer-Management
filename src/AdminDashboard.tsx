@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import * as api from './api';
 import * as XLSX from 'xlsx';
@@ -661,8 +660,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 model: 'gemini-2.5-flash',
                 contents: {
                     parts: [
-                        { text: prompt },
-                        ...inlineDataParts
+                        { text: prompt as string },
+                        ...(inlineDataParts as any[])
                     ]
                 }
             });
@@ -672,7 +671,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
                 throw new Error("AI response text is empty or invalid.");
             }
             // Clean up code blocks if present
-            text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+            text = (text as string).replace(/```json/g, '').replace(/```/g, '').trim();
             const data = JSON.parse(text);
 
             if (Array.isArray(data)) {
@@ -739,10 +738,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
 
         if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.name.endsWith('.csv')) {
             const reader = new FileReader();
-            reader.onload = async (event: ProgressEvent<FileReader>) => {
-                const target = event.target as FileReader;
-                if (!target) return;
-                const data = target.result;
+            reader.onload = async () => {
+                const data = reader.result;
                 if (!data || typeof data === 'string') return; // Expecting ArrayBuffer for 'array' type read
                 
                 const wb = XLSX.read(data, { type: 'array' });
@@ -755,10 +752,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
             reader.readAsArrayBuffer(file);
         } else if (file.type.startsWith('image/') || file.type === 'application/pdf') {
             const reader = new FileReader();
-            reader.onloadend = async (event: ProgressEvent<FileReader>) => {
-                const target = event.target as FileReader;
-                if (!target) return;
-                const result = target.result;
+            reader.onloadend = async () => {
+                const result = reader.result;
                 if (typeof result !== 'string') return;
                 
                 const base64Data = result.split(',')[1];
@@ -775,10 +770,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout }
         } else {
              // Treat as text file
             const reader = new FileReader();
-            reader.onload = async (event: ProgressEvent<FileReader>) => {
-                const target = event.target as FileReader;
-                if (!target) return;
-                const text = target.result;
+            reader.onload = async () => {
+                const text = reader.result;
                 if (typeof text !== 'string') return;
                 await processAiRequest(`File Content:\n${text}`);
             }
