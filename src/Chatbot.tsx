@@ -20,8 +20,15 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isOpen, onClose }) => {
   useEffect(() => {
     if (isOpen) {
       try {
-        // Strictly use process.env.API_KEY for Gemini API
-        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const apiKey = process.env.API_KEY;
+        if (!apiKey) {
+            if (messages.length === 0) {
+                setMessages([{ role: 'model', content: '시스템 오류: API Key가 설정되지 않았습니다. 관리자에게 문의하세요.' }]);
+            }
+            return;
+        }
+
+        const ai = new GoogleGenAI({ apiKey });
         chatRef.current = ai.chats.create({
           model: 'gemini-3-flash-preview',
           config: {
@@ -35,6 +42,7 @@ export const Chatbot: React.FC<ChatbotProps> = ({ isOpen, onClose }) => {
         }
       } catch (e) {
         console.error("AI Init error:", e);
+        setMessages([{ role: 'model', content: 'AI 초기화 중 오류가 발생했습니다.' }]);
       }
     }
   }, [isOpen]);

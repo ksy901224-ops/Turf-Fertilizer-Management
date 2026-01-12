@@ -188,11 +188,17 @@ export default function TurfFertilizerApp() {
 
   const handleGetRecommendation = async () => {
     if (!log.length) return alert('기록이 없습니다.');
+    
+    const apiKey = process.env.API_KEY;
+    if (!apiKey || apiKey === 'undefined') {
+        setAiResponse("⚠️ 시스템 오류: API Key가 설정되지 않았습니다. 관리자에게 문의하세요.");
+        return;
+    }
+
     setIsLoadingAI(true);
     setAiResponse('');
     try {
-      // Strictly use process.env.API_KEY for initializing GoogleGenAI
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const ai = new GoogleGenAI({ apiKey });
       const prompt = `잔디 관리 전문가로서 다음 시비 데이터를 분석하여 향후 최적 시비 처방을 작성하세요: ${JSON.stringify(log.slice(0, 5))}. 한글로 답변하세요.`;
       const response = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
@@ -201,7 +207,7 @@ export default function TurfFertilizerApp() {
       setAiResponse(response.text || '분석 결과가 없습니다.');
     } catch (e) {
       console.error(e);
-      setAiResponse('AI 분석 중 오류가 발생했습니다.');
+      setAiResponse('AI 분석 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
     } finally {
       setIsLoadingAI(false);
     }
